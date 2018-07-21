@@ -149,8 +149,8 @@ namespace fileHasherConverter
 
 
             //Save as PDF for text Extraction
-            //string pdfpath = pptfile.Replace(".ppt", "") + ".pdf";
-            //pptPresentation.ExportAsFixedFormat(pdfpath, PpFixedFormatType.ppFixedFormatTypePDF, PpFixedFormatIntent.ppFixedFormatIntentPrint, MsoTriState.msoFalse);
+            string pdfpath = pptfile.Replace(".ppt", "") + ".pdf";
+            pptPresentation.ExportAsFixedFormat(pdfpath, PpFixedFormatType.ppFixedFormatTypePDF, PpFixedFormatIntent.ppFixedFormatIntentPrint, MsoTriState.msoFalse);
 
 
             int slide_count = pptPresentation.Slides.Count;
@@ -159,10 +159,10 @@ namespace fileHasherConverter
             for (int i = 1; i <= slide_count; ++i)
             {
                 /* full HD*/
-                pptPresentation.Slides[i].Export(imageBase + @"\" + path + "slide" + i + ".png", "png", 800, 600);
+                pptPresentation.Slides[i].Export(path + imageBase + @"\" + "slide" + i + ".png", "png", 800, 600);
 
                 /* Thumbnail*/
-                pptPresentation.Slides[i].Export(imageBase + @"\" + path + "thumb.slide" + i + ".png", "png", 320, 240);
+                pptPresentation.Slides[i].Export(path + imageBase + @"\" + "thumb.slide" + i + ".png", "png", 320, 240);
 
             }
 
