@@ -119,9 +119,9 @@ namespace fileHasherConverter
             newHash.ppt2Image(pptfile, ppt_img_root, prefix);
             newHash.ppt2text(pptfile);
             newHash.ppt2pdfByPage(pptfile, null, null, 5);
-
             newHash.pdf2Text(pptfile.Replace(".ppt", "") + ".pdf");
-            newHash.pdf2TextByPage(pptfile.Replace(".ppt", "") + ".pdf", 2);
+
+            //newHash.pdf2TextByPage(pdf_root +@"\"+ pptfile.Replace(".ppt", "") + ".pdf", 2);
 
             //newHash.readPPTText(pptfile);
 
