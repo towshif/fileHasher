@@ -17,8 +17,10 @@ namespace fileHasherConverter
     class Program
     {
         //static string imageBase = @"H:\output";
-        static string imageBase = ".";
-        static string exeBase = ".";
+        static string ppt_img_root = ".";
+        static string exe_root = ".";
+        static string content_img_root = ".";
+        static string pdf_root = ".";
         //static DBConnect db;
 
 
@@ -47,8 +49,8 @@ namespace fileHasherConverter
 
             string pa = System.Reflection.Assembly.GetExecutingAssembly().Location;
             var dd = System.IO.Path.GetDirectoryName(pa);
-            exeBase = dd.ToString();
-            string ppt = exeBase + @"\" + @"d5000.pdf";
+            exe_root = dd.ToString();
+            string ppt = exe_root + @"\" + @"d5000.pdf";
             //Console.WriteLine(ppt);
             //Console.WriteLine(pdf2Text(ppt));
             //pdf2Image(ppt);
@@ -66,9 +68,9 @@ namespace fileHasherConverter
             //string path = System.Reflection.Assembly.GetExecutingAssembly().CodeBase;
             //once you have the path you get the directory with:
             var directory = System.IO.Path.GetDirectoryName(pa);
-            exeBase = dd.ToString();
+            exe_root = dd.ToString();
             /* END PATH */
-            imageBase = exeBase;
+            ppt_img_root = exe_root;
 
             /* 
              * For commandline only run: 
@@ -91,8 +93,11 @@ namespace fileHasherConverter
                 
             }
             */
-            pptfile = exeBase + @"\" + @"ppt1.pptx";
+            //pptfile = exeBase + @"\" + @"ppt1.pptx";
+            //pptfile = exeBase + @"\" + @"LS-SWIFT.pptx";
+            pptfile = exe_root + @"\" + @"LS-Char-Extraction.pptx";
 
+            //pptfile = exeBase + @"\" + @"LS-SWIFT_Product_Apps_Weekly_2018-07-06.pptx";
             // remove when standalone application 
             //string[] filePaths = System.IO.Directory.GetFiles(imagebase + @"\", "*.pptx");
             //pptfile = filePaths[0];
@@ -105,10 +110,18 @@ namespace fileHasherConverter
 
 
 
-            Console.WriteLine("Exe Base Dir = " + exeBase);
-            Console.WriteLine("Image Base Dir = " + imageBase);
+            Console.WriteLine("Exe Base Dir = " + exe_root);
+            Console.WriteLine("Image Base Dir = " + ppt_img_root);
+            ppt_img_root = exe_root + @"\ppt-img"; 
+            pdf_root = exe_root + @"\pdf";
+            content_img_root = exe_root + @"\content-img";
 
-            newHash.ppt2Image(pptfile, imageBase, prefix);
+            newHash.ppt2Image(pptfile, ppt_img_root, prefix);
+            newHash.ppt2text(pptfile);
+            newHash.ppt2pdfByPage(pptfile, null, null, 5);
+
+            newHash.pdf2Text(pptfile.Replace(".ppt", "") + ".pdf");
+            newHash.pdf2TextByPage(pptfile.Replace(".ppt", "") + ".pdf", 2);
 
             //newHash.readPPTText(pptfile);
 
