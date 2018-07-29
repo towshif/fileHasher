@@ -93,9 +93,12 @@ namespace fileHasherConverter
                 
             }
             */
-            //pptfile = exeBase + @"\" + @"ppt1.pptx";
-            //pptfile = exeBase + @"\" + @"LS-SWIFT.pptx";
-            pptfile = exe_root + @"\" + @"LS-Char-Extraction.pptx";
+            //pptfile = exe_root + @"\" + @"ppt1.pptx";
+            pptfile = exe_root + @"\" + @"LS-SWIFT.pptx";
+            //pptfile = exe_root + @"\" + @"LS-Char-Extraction.pptx";
+            //pptfile = exe_root + @"\" + @"Flash_SJ_Pitch.ppt";
+            //pptfile = exe_root + @"\" + @"9650_Intro_111110.ppt";
+
 
             //pptfile = exeBase + @"\" + @"LS-SWIFT_Product_Apps_Weekly_2018-07-06.pptx";
             // remove when standalone application 
@@ -108,20 +111,34 @@ namespace fileHasherConverter
             //db = new DBConnect();
             //db.Insert("insert into weekly (filename, hashtext, imgthumb, imglarge) values ('LS_WEEKLY5', 'PO1 ET', '/img/weekly7/thumb.png', '/img/weekly7/HD.png') "); 
 
+            pptParser fe = new pptParser();
+            fe.GetMetaData(pptfile);
 
+
+            ////print all ascii chars
+
+            //for (int i = 0; i < 256; ++i)
+            //{
+            //    Console.Write(i + ":" + (char)i + "| ");
+            //}
 
             Console.WriteLine("Exe Base Dir = " + exe_root);
             Console.WriteLine("Image Base Dir = " + ppt_img_root);
-            ppt_img_root = exe_root + @"\ppt-img"; 
+            ppt_img_root = exe_root + @"\ppt-img";
             pdf_root = exe_root + @"\pdf";
             content_img_root = exe_root + @"\content-img";
 
-            newHash.ppt2Image(pptfile, ppt_img_root, prefix);
-            newHash.ppt2text(pptfile);
-            newHash.ppt2pdfByPage(pptfile, null, null, 5);
-            newHash.pdf2Text(pptfile.Replace(".ppt", "") + ".pdf");
+            /* PPT Operations */
 
-            //newHash.pdf2TextByPage(pdf_root +@"\"+ pptfile.Replace(".ppt", "") + ".pdf", 2);
+            //fe.ppt2Image(pptfile, ppt_img_root, prefix);
+            //fe.ppt2pdf(pptfile, "8ih423yu673", pdf_root, "");
+            //fe.ppt2text(pptfile);
+            //fe.ppt2pdfByPage(pptfile, null, null, 1);
+
+            /* PDF Operations */
+            string pdfFile = pdf_root + @"\8ih423yu673.pdf" ;
+            fe.pdf2Text(pdfFile);
+            //fe.pdf2TextByPage(pdfFile, 2);
 
             //newHash.readPPTText(pptfile);
 

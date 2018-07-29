@@ -17,116 +17,128 @@ using System.Text.RegularExpressions;
 using System.Data;
 // define custom keyValue pair for IDs
 using DataPair = System.Collections.Generic.KeyValuePair<string, int>;
-
+using System.Reflection;
 
 namespace fileHasherConverter
 {
-    public class FileHash
+    public class pptParser
     {
-        //public string imageBase = @"H:\output";
-        private  string imageBase = ".";
-        private static string exeBase = ".";
-        //public DBConnect db;
-        private static string pa = System.Reflection.Assembly.GetExecutingAssembly().Location;
-        private static string dd = System.IO.Path.GetDirectoryName(pa);
-        //exeBase = dd.ToString();
-            
-       // For testing only. 
-        public void hashMe()
+
+        /* flags*/
+        private bool ERROR_PPT2PDF_FULL = false;
+        private bool ERROR_PPT2IMG = false;
+        private bool ERROR_PPT2TEST = false;
+
+        /* IDs Identifiers */
+        private string MOTHER_ID = null;
+        private string FILE_ID = null;
+        private string FILE_PATH = null;
+        private string FILE_TYPE = null;
+
+        /* Paths */
+        private string DATA_ROOT = null; 
+        private string PDF_ROOT = null;
+        private string IMG_ROOT = null;
+        private string IMG_CONTENT_ROOT = null;
+        private string EXPORT_PATH = null;
+
+        /* Constructor for globals */
+        public pptParser()
         {
-            string pa = System.Reflection.Assembly.GetExecutingAssembly().Location;
-            var dd = System.IO.Path.GetDirectoryName(pa);
-            exeBase = dd.ToString();
-            //string ppt = exeBase + @"\" + @"d5000.pdf";
-            string ppt = exeBase + @"\" + @"ppt1.pdf";
-            //Console.WriteLine(ppt);
+            ERROR_PPT2PDF_FULL = false;
+            ERROR_PPT2IMG = false;
+            ERROR_PPT2TEST = false;
+            MOTHER_ID = null;
+            FILE_ID = null;
+            FILE_PATH = null;
+            FILE_TYPE = null;
 
-            Console.WriteLine("writing PDF: page 4");
-            Console.WriteLine(pdf2TextByPage(ppt, 4));
-            Console.WriteLine("----------------------");
-            //pdf2Image(ppt);
-            //Console.ReadLine();
-            //return;
+        }
+        public pptParser(string motherid, string fileid)
+        {
+            MOTHER_ID = motherid;
+            FILE_ID = fileid;
 
-            //Console.WriteLine(args[0]); 
+        }
 
-            string prefix = "";
-            string pptfile = "";
+        public void GetMetaData(string pptfile)
+        {
+            Console.WriteLine("PPT File Location:" + pptfile);
+            Microsoft.Office.Interop.PowerPoint.Application pptApplication = new Microsoft.Office.Interop.PowerPoint.Application();
+            Presentation pptPresentation = pptApplication.Presentations
+            .Open(pptfile, MsoTriState.msoFalse, MsoTriState.msoFalse, MsoTriState.msoFalse);
 
-            /*  GET PATH OF EXE  */
-            string path = System.Reflection.Assembly.GetExecutingAssembly().Location;
-            //To get the location the assembly normally resides on disk or the install directory
-            //string path = System.Reflection.Assembly.GetExecutingAssembly().CodeBase;
-            //once you have the path you get the directory with:
-            var directory = System.IO.Path.GetDirectoryName(pa);
-            exeBase = dd.ToString();
-            /* END PATH */
-            imageBase = exeBase;
-
-            /* 
-             * For commandline only run: 
-             * $> PPT2Image sample.pptx
-             * OR
-             * 
-            */
-            /*
-            if (args.Length != 0)  // while using commandline <this>.exe <filename>.pptx
-            {                
-                ppt = exeBase + @"\" + args[0].ToString().Trim();
-                prefix = args[0].ToString().Trim();
-            }
-
-            else // while running tests
-            {
-                //String pptfile = @"G:\LS_CAT_Apps_Weekly_7-17-15_Final.pptx";
-                //string pptfile = @"H:\output\FULL_Q1FY17_LS-SWIFT_DivisionReview_Draft_Final.pptx";
-                ppt = exeBase + @"\" + @"ppt1.pptx";
-                
-            }
-            */
-            pptfile = exeBase + @"\" + @"ppt1.pptx";
-
-            // remove when standalone application 
-            //string[] filePaths = System.IO.Directory.GetFiles(imagebase + @"\", "*.pptx");
-            //pptfile = filePaths[0];
-            // END 
-
-
-
-            //db = new DBConnect();
-            //db.Insert("insert into weekly (filename, hashtext, imgthumb, imglarge) values ('LS_WEEKLY5', 'PO1 ET', '/img/weekly7/thumb.png', '/img/weekly7/HD.png') "); 
-
-
-
-            Console.WriteLine("Exe Base Dir = " + exeBase);
-            Console.WriteLine("Image Base Dir = " + imageBase);
-            Console.WriteLine("File = " + pptfile);
-            ppt2Image(pptfile, imageBase, prefix);
-
-
-            readPPTText(pptfile);
-
-            //mergePPTs(exeBase + @"\" + @"ppt1.pptx", exeBase + @"\" + @"ppt2.pptx"); 
+            listallbuiltinPropertiesfromPowerpoint(pptPresentation, pptPresentation.BuiltInDocumentProperties);
+            pptPresentation.Close();
 
         }
 
 
-        public void pdf2Image(string pdfFile)
+        public void listallbuiltinPropertiesfromPowerpoint(PowerPoint.Presentation presentation, object builtInProps)
+        {
+            Console.WriteLine("Writing List of MetaData\n-----------------------");
+            try
+            {
+                var builtinProps = presentation.BuiltInDocumentProperties; // don't strong cast this or you will get null
+                //var builtinProps = presentation.CustomDocumentProperties; // don't strong cast this or you will get null
+                GetBuiltInProperty(builtinProps);
+            }
+            catch (Exception e)
+            {
+                // Ignorer l'erreur
+                //Log.Warn("Erreur inattendue à la lecture des propriétés internes du document", e);
+            }
+            Console.WriteLine("-------------------\nDone. Writing List");
+        }
+
+        internal void GetBuiltInProperty(dynamic builtInProps)
+        {
+            if (builtInProps != null)
+            {
+                try
+                {
+                    foreach (var p in builtInProps)
+                    {
+                        try
+                        {
+                            Console.Write(p.Name + "(" + p.Type + ") \t:");
+                            Console.Write(p.Value + "\n");
+                            ;
+                        }
+                        catch (Exception e)
+                        {
+                            Console.WriteLine("ERROR");
+                        }
+                    }
+                }
+                catch (Exception e)
+                {
+                    // Property is missing
+                    Console.WriteLine(e.ToString());
+                }
+
+            }
+        }
+
+
+
+
+        public void pdf2Image(string pdfFile, string exportPath)
         //static void pdf2Image(string pptfile, string prefix)
         {
 
             // Do not forget the %d in the output file name  @"Example%d.jpg"
-            GhostscriptWrapper.GeneratePageThumbs(exeBase + @"\" + @"d5000.pdf", exeBase + @"\" + @"Example%d.jpg", 1, 15, 100, 100);
+            GhostscriptWrapper.GeneratePageThumbs(pdfFile, exportPath, 1, 15, 100, 100);
 
             // for a single page [you have to know the page number -- no function in ghostscript]
             // GhostscriptWrapper.GeneratePageThumb(exeBase + @"\" + @"d5000.pdf", exeBase + @"\" + @"Example1.jpg", 1, 100, 100);            
         }
 
-        public void pdf2ImageByPage(string pdfFile, int pagenumber)
+        public void pdf2ImageByPage(string pdfFile, string exportPath, int pagenumber)
         //static void pdf2Image(string pptfile, string prefix)
         {
             // Do not forget the %d in the output file name  @"Example%d.jpg"
-            GhostscriptWrapper.GeneratePageThumbs(exeBase + @"\" + @"d5000.pdf", exeBase + @"\" + @"Example%d.jpg", 1, 15, 100, 100);
+            GhostscriptWrapper.GeneratePageThumbs(pdfFile, exportPath, pagenumber, pagenumber, 100, 100);
             // for a single page [you have to know the page number -- no function in ghostscript]
             // GhostscriptWrapper.GeneratePageThumb(exeBase + @"\" + @"d5000.pdf", exeBase + @"\" + @"Example1.jpg", 1, 100, 100);            
         }
@@ -135,10 +147,11 @@ namespace fileHasherConverter
         /**************************           FINAL        *****************************/
         public string pdf2Text(string pdfFile)
         {
+            Console.WriteLine("PDF PATH=" + pdfFile);
             PdfReader reader = new PdfReader(pdfFile);
             //ITextExtractionStrategy its = new iTextSharp.text.pdf.parser.LocationTextExtractionStrategy();
             ITextExtractionStrategy its = new iTextSharp.text.pdf.parser.SimpleTextExtractionStrategy();
-            
+
             string txt = "";
             int pages = reader.NumberOfPages;
 
@@ -146,12 +159,10 @@ namespace fileHasherConverter
             {
 
                 txt = PdfTextExtractor.GetTextFromPage(reader, page, its);
-                txt = txt.Replace("\n", " ");
-                // Replace multi spaces with single 
-                RegexOptions options = RegexOptions.None;
-                Regex regex = new Regex("[ ]{2,}", options);
 
-                txt = regex.Replace(txt, " ");
+                txt = txt.Replace("NOTITLE", "").Replace("\v", " ").Replace("\f", " ") + "\n";
+                txt = Regex.Replace(txt, @"[^\t\r\n\u0020-\u007E]+", string.Empty);
+
                 Console.WriteLine("Slide #" + page + "\n-----------------------\n" + txt + "\n-----------------------\n");
             }
             // txt = txt.Replace("\n", " ").Replace("  ", " "); ;
@@ -163,6 +174,7 @@ namespace fileHasherConverter
         /**************************           FINAL        *****************************/
         public string pdf2TextByPage(string pdfFile, int pagenumber)
         {
+            Console.WriteLine("PDF PATH=" + pdfFile);
             PdfReader reader = new PdfReader(pdfFile);
             //ITextExtractionStrategy its = new iTextSharp.text.pdf.parser.LocationTextExtractionStrategy();
             ITextExtractionStrategy its = new iTextSharp.text.pdf.parser.SimpleTextExtractionStrategy();
@@ -181,7 +193,7 @@ namespace fileHasherConverter
 
 
         // PDF Split 
-        public void pdfSplit (string pdffile, string prefix)
+        public void pdfSplit(string pdffile, string prefix)
         {
         }
 
@@ -199,7 +211,7 @@ namespace fileHasherConverter
 
 
             //Save as PDF for text Extraction
-            pdfpath = pdfpath +@"\"+ pdfname+ ".pdf";
+            pdfpath = pdfpath + @"\" + pdfname + ".pdf";
 
             //Publish PPT - to - PDF
             try
@@ -369,20 +381,22 @@ namespace fileHasherConverter
             Console.Write("count=" + slide_count);
             for (int i = 1; i <= slide_count; ++i)
             {
-                /* full HD*/
-                pptPresentation.Slides[i].Export(exportPath + @"\" + "slide" + i + ".png", "png", pageWidth, pageHeight);
-
-                /* Thumbnail*/
-                pptPresentation.Slides[i].Export(exportPath + @"\" + "thumb.slide" + i + ".png", "png", pageWidth / 2, pageHeight / 2);
+                /* full HD -  Statistical Size: GIF < JPG < PNG */
+                pptPresentation.Slides[i].Export(exportPath + @"\" + "slide" + i + ".gif", "gif", pageWidth, pageHeight);
+                /* Thumbnail 3x*/
+                pptPresentation.Slides[i].Export(exportPath + @"\" + "thumb.slide" + i + "_3x.gif", "gif", (int)(pageWidth / 3.2), (int)(pageHeight / 3.2));
+                /* Thumbnail 6x*/
+                pptPresentation.Slides[i].Export(exportPath + @"\" + "thumb.slide" + i + "_6x.gif", "gif", (int)(pageWidth / 6), (int)(pageHeight / 6));
 
             }
 
-            ppt2ContentImages(pptPresentation, exportPath.Replace(@"\ppt-img", @"\" + "content-img"));
+            //ppt2ContentImages(pptPresentation, exportPath.Replace(@"\ppt-img", @"\" + "content-img"));
 
             pptPresentation.Close();
         }
 
-        void ppt2ContentImages( Presentation pptPresentation, string exportPath)
+
+        void ppt2ContentImages(Presentation pptPresentation, string exportPath)
         {
             //slide extract image content
             // https://stackoverflow.com/questions/4990825/export-movies-from-powerpoint-to-file-in-c-sharp
@@ -426,7 +440,7 @@ namespace fileHasherConverter
             Microsoft.Office.Interop.PowerPoint.Application pptApplication = new Microsoft.Office.Interop.PowerPoint.Application();
             Presentation pptPresentation = pptApplication.Presentations
             .Open(src_pptfilePath, MsoTriState.msoFalse, MsoTriState.msoFalse, MsoTriState.msoFalse);
-            
+
             foreach (PowerPoint.Slide slide in pptPresentation.Slides)
             {
                 PowerPoint.Shapes slideShapes = slide.Shapes;
@@ -461,7 +475,7 @@ namespace fileHasherConverter
             .Open(pptfile, MsoTriState.msoFalse, MsoTriState.msoFalse, MsoTriState.msoFalse);
 
             System.IO.File.WriteAllText(@".\OutText.md", "#Summary of slides:\n");
-            
+
 
             foreach (Microsoft.Office.Interop.PowerPoint.Slide slide in pptPresentation.Slides)
             {
@@ -487,37 +501,38 @@ namespace fileHasherConverter
                             {
                                 var text = paragraph.Text;
                                 text = text.Replace("\r", "");
-                                text = Regex.Replace(text, @"[^\t\r\n\u0020-\u007E]+", " ");
+                                text = Regex.Replace(text, @"[^\t\r\n\u0020-\u007E]+", string.Empty);
                                 text = Regex.Replace(text, @"[ ]{ 2,}", string.Empty);
                                 if (text.Length > 2)
                                 {
-                                    slide_title = slide_title.Replace("NOTITLE", "").Replace("\v"," ").Replace("\f", " ") + text + "\n";
+                                    slide_title = slide_title.Replace("NOTITLE", "").Replace("\v", " ").Replace("\f", " ") + text + "\n";
                                     slide_title = Regex.Replace(slide_title, @"[^\t\r\n\u0020-\u007E]+", string.Empty);
                                 }
 
                             }
                         }
                     }
-                } catch (Exception ex)
+                }
+                catch (Exception ex)
                 {
                     Console.WriteLine(ex.ToString());
                 }
 
 
-                    Console.WriteLine("@" + slide_title);
+                Console.WriteLine("@" + slide_title);
 
                 foreach (Microsoft.Office.Interop.PowerPoint.Shape shape in slide.Shapes)
-                {                    
+                {
                     pps += readShape(shape);
                 }
 
                 pps = Regex.Replace(pps, @"[^\t\r\n\u0020-\u007E]+", string.Empty);
-                
+
 
                 Console.WriteLine("Slide #" + slide.SlideNumber + "\n-----------------------\n" + pps + "\n-----------------------\n");
 
-                System.IO.File.AppendAllText(@".\OutText.md", "---\nSlide #" + slide.SlideNumber +"\n# " + slide_title );
-                System.IO.File.AppendAllText(@".\OutText.md", "\n" + pps + "\n");
+                System.IO.File.AppendAllText(@".\OutText.md", "---\nSlide #" + slide.SlideNumber + "\n# " + slide_title);
+                System.IO.File.AppendAllText(@".\OutText.md", "\n" + pps + "\n");
             }
             pptPresentation.Close();
         }
@@ -525,14 +540,6 @@ namespace fileHasherConverter
         private string readShape(Microsoft.Office.Interop.PowerPoint.Shape shape)
         {
             string str = "";
-            // Just Checking this ! //comment it (below) out 
-            //if (shape.Type == MsoShapeType.msoEmbeddedOLEObject)
-            //{
-            //    Console.WriteLine("Excel Table = true");
-            //} else
-            //{
-            //    Console.WriteLine("Excel Table = false");
-            //}
 
             // extract text 
             if (shape.HasTextFrame == Microsoft.Office.Core.MsoTriState.msoTrue)
@@ -546,7 +553,7 @@ namespace fileHasherConverter
                     {
                         var text = paragraph.Text;
                         text = text.Replace("\r", "").Replace("\v", " ").Replace("\f", " ").Trim();
-                        text = Regex.Replace(text, @"[^\t\r\n\u0020-\u007E]+", string.Empty);                        
+                        text = Regex.Replace(text, @"[^\t\r\n\u0020-\u007E]+", string.Empty);
                         text = Regex.Replace(text, @"[ ]{ 2,}", " ");
                         if (text.Length > 2)
                             str += "* " + text + "\n";
@@ -602,7 +609,7 @@ namespace fileHasherConverter
             else if (shape.HasChart == MsoTriState.msoTrue)
             {
                 Console.WriteLine("Has Chart: True");
-                Microsoft.Office.Interop.PowerPoint.Chart t = shape.Chart;                
+                Microsoft.Office.Interop.PowerPoint.Chart t = shape.Chart;
                 //string text = ""; 
                 if (t.HasTitle)
                 {
@@ -612,10 +619,10 @@ namespace fileHasherConverter
                 }
 
                 if (t.HasDataTable)
-                {                    
-                    Console.WriteLine("Has DataTable: True");                    
-                    System.Data.DataTable dp = (System.Data.DataTable)shape.Chart.DataTable;                    
-                    string strRowCommaSeparated = ""; 
+                {
+                    Console.WriteLine("Has DataTable: True");
+                    System.Data.DataTable dp = (System.Data.DataTable)shape.Chart.DataTable;
+                    string strRowCommaSeparated = "";
                     foreach (DataRow dr in dp.Rows)
                     {
                         for (int i = 0; i < dr.ItemArray.Length; i++)
@@ -625,7 +632,7 @@ namespace fileHasherConverter
                     }
                     Console.WriteLine("\n\n\t\tOur DataTable : " + strRowCommaSeparated);
 
-                    var p = t.DataTable;                    
+                    var p = t.DataTable;
                     str += t.DataTable.ToString(); //.DataTable.ToString();
                 }
 
@@ -667,18 +674,8 @@ namespace fileHasherConverter
                 {
                     // add a note for PDF extraction and flagging
                 }
-
-                //Microsoft.Office.Interop.PowerPoint.SeriesCollection chartSeriesA = (Microsoft.Office.Interop.PowerPoint.SeriesCollection)t.SeriesCollection();
-                //foreach (Microsoft.Office.Interop.PowerPoint.Series Srs in chartSeriesA)
-                //{
-                //    System.Array a = (System.Array)((object)Srs.Values); 
-                //    //var XV = Srs.XValues;
-                //    //var V = Srs.Values;
-                //    //str += Srs.ToString();
-                //}
-
+                
             }
-
 
             //else if (shape.Type == MsoShapeType.msoTextBox || shape.Type == MsoShapeType.msoAutoShape)
             //{
@@ -696,7 +693,6 @@ namespace fileHasherConverter
             //    }
             //}
 
-            //str = CleanInput(str.Replace("\n\n", "\n"));
             str = Regex.Replace(str, @"[^\t\r\n\u0020-\u007E]+", string.Empty);
             return str; //.Replace("\n\n", "\n"); //.Replace("\r",""); 
         }
@@ -716,10 +712,10 @@ namespace fileHasherConverter
             Presentation pptPresentation2 = pptApplication1.Presentations.Open(pptfile2, MsoTriState.msoFalse, MsoTriState.msoFalse, MsoTriState.msoFalse);
 
             //Take the first PPT and and merge rest.
-            pptPresentation1.SaveAs(exeBase + @"\" + @"temp.pptx", PowerPoint.PpSaveAsFileType.ppSaveAsDefault, MsoTriState.msoTrue);
+            pptPresentation1.SaveAs(EXPORT_PATH + @"\" + @"temp.pptx", PowerPoint.PpSaveAsFileType.ppSaveAsDefault, MsoTriState.msoTrue);
             pptPresentation1.Close();
 
-            PowerPoint.Presentation mergedPPT = app.Presentations.Open(exeBase + @"\" + @"temp.pptx", MsoTriState.msoFalse, MsoTriState.msoFalse, MsoTriState.msoTrue);
+            PowerPoint.Presentation mergedPPT = app.Presentations.Open(EXPORT_PATH + @"\" + @"temp.pptx", MsoTriState.msoFalse, MsoTriState.msoFalse, MsoTriState.msoTrue);
 
             int slide_count = 5; // pptPresentation1.Slides.Count;
             Console.Write("count=" + slide_count);
@@ -728,7 +724,7 @@ namespace fileHasherConverter
 
             mergedPPT.Slides.InsertFromFile(pptfile2, 0, 1, -1);
 
-            mergedPPT.SaveAs(exeBase + @"\" + @"merged.pptx", PowerPoint.PpSaveAsFileType.ppSaveAsDefault, MsoTriState.msoTrue);
+            mergedPPT.SaveAs(EXPORT_PATH + @"\" + @"merged.pptx", PowerPoint.PpSaveAsFileType.ppSaveAsDefault, MsoTriState.msoTrue);
             mergedPPT.Close();
             app.Quit();
 
@@ -741,266 +737,8 @@ namespace fileHasherConverter
                 //pptPresentation1.Slides[i].Export(imageBase + @"\" + prefix + "thumb.slide" + i + ".png", "png", 320, 240);
 
             }
-
         }
-   
-
-        /* 
-         * http://mantascode.com/c-get-text-content-from-microsoft-powerpoint-file/ 
-         */
-        // under construction - still buggy on: shape.Chart to string 
-        public void readPPTText(string pptfile)
-        {
-            Microsoft.Office.Interop.PowerPoint.Application PowerPoint_App = new Microsoft.Office.Interop.PowerPoint.Application();
-            Microsoft.Office.Interop.PowerPoint.Presentations multi_presentations = PowerPoint_App.Presentations;
-            Microsoft.Office.Interop.PowerPoint.Presentation presentation = multi_presentations.Open(pptfile, MsoTriState.msoFalse, MsoTriState.msoFalse, MsoTriState.msoFalse);
-            /*  MsoTriState.msoFalse, MsoTriState.msoFalse, MsoTriState.msoFalse 
-             required to not open the file in a separate process.
-             */
-            string presentation_text = "";
-            string fulltext = "";
-            for (int i = 0; i < presentation.Slides.Count; i++)
-            {
-                //fulltext += "\n\n";
-                //fulltext += "Slide:" + (i + 1) + " || ";
-                Console.WriteLine("______Slide # " + (i + 1) + "________");
-
-                foreach (var item in presentation.Slides[i + 1].Shapes)
-                {
-                    var shape = (Microsoft.Office.Interop.PowerPoint.Shape)item;
-
-                    /* if shape object is a group of shapes
-                     http://www.pptfaq.com/FAQ00600_Changing_shapes_within_groups_-without_ungrouping-.htm                     
-                     */
-                    if (shape.Type == MsoShapeType.msoGroup)
-                    {
-                        Console.WriteLine(shape.GroupItems.Count);
-                        for (int j = 1; j <= shape.GroupItems.Count; ++j)
-                        {
-                            string temp = getShapeText((Microsoft.Office.Interop.PowerPoint.Shape)shape.GroupItems[j]);
-                            fulltext += temp;
-                            presentation_text += temp;
-                        }
-                    }
-                    /* else if shape object is NOT group of shapes and just a Shape*/
-                    else
-                    {
-                        string temp = getShapeText(shape);
-                        fulltext += temp;
-                        presentation_text += temp;
-                    }
-
-                }
-                presentation_text = presentation_text.Replace("\"", " ").Replace("\'", " ").Replace("\n", " ").Replace("\r", " ");
-                //presentation_text= presentation_text.Replace("\'", " ");
-                //Console.WriteLine("insert into weekly (filename, hashtext, imgthumb, imglarge) values ('" + pptfile + "', '" + presentation_text + "', '/img/weekly/" + pptfile + "thumb_slide" + (i + 1) + ".png', '/img/weekly/" + pptfile + "slide" + (i + 1) + ".png') ");
-                //db.Insert("insert into weekly (filename, hashtext, imgthumb, imglarge) values ('" + pptfile + "', '" + presentation_text + "', '/img/weekly/" + pptfile + "_slide" + (i + 1) + ".png', '/img/weekly/" + pptfile + "_slide" + (i + 1) + ".png') "); 
-
-
-                Console.Write("Slide:" + (i + 1) + ":\n" + presentation_text);
-                Console.Write("\n ");
-
-                Console.ReadKey();
-
-                presentation_text = "";
-
-
-            }
-            //System.IO.File.WriteAllText("G:\\text.txt",fulltext);
-            System.IO.File.WriteAllText("text.txt", fulltext);            
-            PowerPoint_App.Quit();
-            Console.WriteLine(presentation_text);
-            Console.ReadLine();
-        }
-
-        public string getShapeText(Microsoft.Office.Interop.PowerPoint.Shape shape)
-        {
-            string presentation_text = "";
-            string textString = "";
-
-
-            if (shape.HasTextFrame == MsoTriState.msoTrue)
-            {
-                if (shape.TextFrame.HasText == MsoTriState.msoTrue)
-                {
-
-                    var textFrame = shape.TextFrame;
-                    var textRange = textFrame.TextRange;
-                    var paragraphs = textRange.Paragraphs(-1, -1);
-                    foreach (Microsoft.Office.Interop.PowerPoint.TextRange paragraph in paragraphs)
-                    {
-                        var text = paragraph.Text;
-                        text = text.Replace("\r", "");
-                        text = text.Replace("\n", " ");
-                        presentation_text += text + " ";
-                        textString += text + " ";
-                    }
-                }
-            }
-
-            /*
-            if (shape.HasTable == MsoTriState.msoTrue)
-            {
-                var t = shape.Table;
-
-                for (int j = 1; j <= t.Rows.Count; ++j)
-                    for (int k = 1; k <= t.Columns.Count; ++k)
-                    {
-                        //if (shape.HasTextFrame == MsoTriState.msoTrue)
-                        //{
-                        //    if (shape.TextFrame.HasText == MsoTriState.msoTrue)
-                        //    {
-
-                        var textFrame = t.Cell(j, k).Shape.TextFrame;
-                        var textRange = textFrame.TextRange;
-
-                        presentation_text += textRange.Text + " ";
-                        textString += textRange.Text + " ";
-
-                        //    }
-                        //}
-                    }
-            }
-            */
-
-            //if (shape.HasChart == MsoTriState.msoTrue)
-            //{
-            //    Console.WriteLine("Has Chart: True");
-            //    Microsoft.Office.Interop.PowerPoint.Chart t = shape.Chart;
-
-
-            //    if (t.HasTitle)
-            //    {
-            //        Console.WriteLine("Has DataTable: True");
-            //        Console.WriteLine("Title:" + t.ChartTitle.Text.ToString()); textString += t.ChartTitle.Text.ToString() + " ";
-            //    }
-
-            //    if (t.HasDataTable)
-            //    {
-            //        Console.WriteLine("Has DataTable: True");
-            //        var p = t.DataTable;
-            //        //textString += t.DataTable.ToString();
-            //    }
-
-            //    textString += shape.Chart.ToString();
-
-            //    Console.WriteLine("Shape.Chart.tostring()" + shape.Chart.ToString());
-
-            //    Microsoft.Office.Interop.PowerPoint.SeriesCollection tmp = (Microsoft.Office.Interop.PowerPoint.SeriesCollection)t.SeriesCollection();
-            //    Console.WriteLine("Series Count:" + tmp.Count);
-
-
-
-            //    /*
-
-            //    for (int j = 1; j <= tmp.Count; ++j)
-            //    {
-            //        Microsoft.Office.Interop.PowerPoint.Series aSeries = (Microsoft.Office.Interop.PowerPoint.Series)tmp.Item(j);
-
-            //        foreach (object v in (Array)aSeries.XValues)
-            //        {
-            //            if (v != null) { Console.WriteLine(v.ToString()); textString += v.ToString() +" "; }
-            //        }
-            //        foreach (object v in (Array)aSeries.Values)
-            //        {
-            //            if (v != null) { Console.WriteLine(v.ToString()); textString += v.ToString()+ " "; }
-            //        }
-            //    }               
-            //    */
-            //    /*
-            //    foreach (Microsoft.Office.Interop.PowerPoint.Series aSeries in tmp ) {
-            //        foreach (object v in aSeries.XValues)
-            //        {
-
-            //        }
-            //        foreach (object v in aSeries.Values as Array)
-            //        {
-                        
-            //        }
-            //        var p = aSeries.XValues;
-
-            //        ;
-            //        try
-            //        {
-            //            Console.WriteLine(ArrayToStringGeneric(p, " "));
-            //        }
-            //        catch (Exception e) { Console.WriteLine(e.ToString()); }
-            //    }
-
-            //    */
-            //}
-            textString = textString.Replace("\r", "");
-            textString = textString.Replace("\n", " ");
-            return textString;
-
-        }
-
-
-        public string ArrayToStringGeneric<T>(IList<T> array, string delimeter)
-        {
-            string outputString = "";
-
-            for (int i = 0; i < array.Count; i++)
-            {
-                if (array[i] is IList<T>)
-                {
-                    //Recursively convert nested arrays to string
-                    outputString += ArrayToStringGeneric<T>((IList<T>)array[i], delimeter);
-                }
-                else
-                {
-                    outputString += array[i];
-                }
-
-                if (i != array.Count - 1)
-                    outputString += delimeter;
-            }
-
-            return outputString;
-        }
-
-
+        
     }
 }
 
-
-
-
-// failed junk with series.Values and series.XValues for non-embedded excel sheets in charts. 
-/*
-                    //object [] V = (object[])aSeries.Values;
-                    //string[] P = (string[])aSeries.DataLabels();
-                    
-                    //var XV = aSeries.XValues; 
-
-                    //Microsoft.Office.Interop.PowerPoint.Points pts = tmp.Item(j).Points();
-                    //Console.WriteLine("Points #:" + pts.Count);
-                    //Console.WriteLine(pts.Item(2).Name);
-
-                    //Does not work : Invalid Case Ex. 
-                    //foreach (PowerPoint.Point p in pts) {
-                    //    Console.WriteLine(p.Name);
-                    //}
-
-
-                    // Working till this point 
-                    // now lets extract (XValues , Values) -- How ? I dont know. :P 
-
-
-                    //Console.Write(aSeries.Points());
-                    //foreach (PowerPoint.Point p in aSeries.Points() as PowerPoint.Points)
-                    //{
-                    //    Console.WriteLine((Array)p);
-                    //}
-
-                    ////var p = aSeries.XValues();
-                    //dynamic p = aSeries
-                    //try
-                    //{
-                    //    Console.WriteLine(ArrayToStringGeneric(p, " "));
-                    //}
-                    //catch (Exception e) { Console.WriteLine(e.ToString()); } 
-
-
-
- */
