@@ -21,7 +21,7 @@ using DataPair = System.Collections.Generic.KeyValuePair<string, int>;
 
 namespace fileHasherConverter
 {
-    public class FileHash
+    public class __BACKUP__FileHash
     {
         //public string imageBase = @"H:\output";
         private  string imageBase = ".";

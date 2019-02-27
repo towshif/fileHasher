@@ -1,15 +1,8 @@
 ﻿using System;
+using MongoDB.Driver;
+using MongoDB.Bson;
+using System.Threading.Tasks;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using GhostscriptSharp;
-using iTextSharp.text.pdf;
-using iTextSharp.text.pdf.parser;
-using iTextSharp.text; 
-using Microsoft.Office.Core;
-using Microsoft.Office.Interop.PowerPoint;
-using PowerPoint = Microsoft.Office.Interop.PowerPoint;
-
 //using Microsoft.Office.Interop.Excel;
 
 namespace fileHasherConverter
@@ -21,7 +14,15 @@ namespace fileHasherConverter
         static string exe_root = ".";
         static string content_img_root = ".";
         static string pdf_root = ".";
+
+        /* Database */
+        private static string connectionString;
+        private static MongoClient client;
+        public static bool status = false;
+        private static IMongoDatabase db;
         //static DBConnect db;
+
+
 
 
         static void Main(string[] args)
@@ -37,15 +38,167 @@ namespace fileHasherConverter
             //}
             //catch (Exception e) { Console.Write(e.StackTrace); }
 
-            runHash();
+            //runHash();
+            test_PPT_Parser();
+
+            /*
+             *  READ FILESTOR for new unprocessed files: isProcessed = false; 
+             */
+
+            // connect fileStor DB 
+
+            // read collection 
+
+            // for entries in collection (files) loop 
+
+            // if type is ppt. pptx - switch function 
+
+            // call file type --> Controller --> processing file data  
+
+            // update fileStor DB as         'proocessed'
+
 
             Console.WriteLine("All Tasks Completed.");
             Console.ReadKey();
         }
 
+
+        static void test_PPT_Parser()
+        {
+
+            /* read file store database */
+            /* connect database */
+            //md = new MongoDBConnect();
+            //md.Connect("result_database");
+            //md.getDocuments("fileStor");
+
+            //var filter = "{ filename : 'Nanopoint_Training_Agenda.pptx'}"; 
+            var filter = "{ isProcessed : false, filetype : { $nin: ['.pdf', '.doc', '.docx'] } }"; 
+
+            getFilteredDocuments("fileStor", filter);
+            
+            /*
+
+            pptController pt = new pptController();
+
+            // sample path example 
+            string pa = System.Reflection.Assembly.GetExecutingAssembly().Location;
+            var dd = System.IO.Path.GetDirectoryName(pa);            
+            string exe_root = dd.ToString();
+            string ppt_img_root = exe_root;
+            string pptfile = exe_root + @"\" + @"LS-Char-Extraction.pptx";
+
+            pt.runPptParserFlow("Hello"); 
+
+            */
+
+        }
+
+
+        public static async Task getFilteredDocuments(string collection_name, FilterDefinition<BsonDocument> filter)
+        {
+            connectionString = "mongodb://localhost:27017";
+            client = new MongoClient(connectionString);
+            IMongoDatabase db = client.GetDatabase("result_database");
+
+            var collection = db.GetCollection<BsonDocument>(collection_name);
+
+            //FilterDefinition<BsonDocument> filter = FilterDefinition<BsonDocument>.Empty;
+            FindOptions<BsonDocument> options = new FindOptions<BsonDocument>
+            {
+                BatchSize = 2,
+                NoCursorTimeout = false
+            };
+            
+            
+            using (IAsyncCursor<BsonDocument> cursor = await collection.FindAsync(filter, options))
+            {                
+                var batch = 0;
+                var countRecord = 0; 
+                while (await cursor.MoveNextAsync() /*&& countRecord <2*/)
+                {
+                    IEnumerable<BsonDocument> documents = cursor.Current;
+
+
+                    batch++;
+
+                    Console.WriteLine($"Batch: {batch}");
+
+                    foreach (BsonDocument document in documents)
+                    {
+                        Console.WriteLine("Processing document: "+ document["_id"]);
+                        //Console.WriteLine();
+
+                        // TODO task 
+                        pptController pt = new pptController();
+
+                        // sample path example 
+                        //string pa = System.Reflection.Assembly.GetExecutingAssembly().Location;
+                        //var dd = System.IO.Path.GetDirectoryName(pa);
+                        //string exe_root = dd.ToString();
+                        //string ppt_img_root = exe_root;
+                        //string pptfile = exe_root + @"\" + @"LS-Char-Extraction.pptx";
+
+                        //pt.runPptParserFlow(document["rawPath"].ToString(), document.AsObjectId);
+                        //pt.runPptParserFlow(document["rawPath"].ToString(), document["_id"].ToString());
+
+                        var motherID = pt.runPptParserFlow(document);
+
+
+                        /* Update FileStor {isProcessed : true } */
+                        // create new Class entity for post 
+                        
+                        var fileCollection = db.GetCollection<BsonDocument>("fileStor");
+
+                        //find the MasterID with 1130 and replace it with 1120
+                        var result = await collection.FindOneAndUpdateAsync(
+                                            Builders<BsonDocument>.Filter.Eq("_id", document["_id"]),
+                                            Builders<BsonDocument>.Update.Set("isProcessed", true)
+                                            .Set("MotherID", motherID));
+
+                        //retrive the data from collection
+                        await fileCollection.Find(new BsonDocument())
+                         .ForEachAsync(x => Console.WriteLine(x));
+
+                        countRecord++;
+                    }
+                }
+
+                Console.WriteLine($"Total Batch: { batch}");
+                Console.WriteLine($"Total Records Processed: { countRecord}");
+
+            }
+
+        }
+
+
+        public static async Task getDocuments(string collection_name)
+        {
+            connectionString = "mongodb://localhost:27017";
+            client = new MongoClient(connectionString);
+            IMongoDatabase db = client.GetDatabase("result_database");
+
+            var collection = db.GetCollection<BsonDocument>(collection_name);
+
+            using (IAsyncCursor<BsonDocument> cursor = await collection.FindAsync(new BsonDocument()))
+            {
+                while (await cursor.MoveNextAsync())
+                {
+                    IEnumerable<BsonDocument> batch = cursor.Current;
+                    foreach (BsonDocument document in batch)
+                    {
+                        Console.WriteLine(document);
+                        Console.WriteLine();
+                    }
+                }
+            }
+        }
+
+
+
         static void runHash()
         {
-            FileHash newHash = new FileHash();
+            __BACKUP__FileHash newHash = new __BACKUP__FileHash();
 
             string pa = System.Reflection.Assembly.GetExecutingAssembly().Location;
             var dd = System.IO.Path.GetDirectoryName(pa);
@@ -94,8 +247,12 @@ namespace fileHasherConverter
             }
             */
             //pptfile = exe_root + @"\" + @"ppt1.pptx";
-            pptfile = exe_root + @"\" + @"LS-SWIFT.pptx";
-            //pptfile = exe_root + @"\" + @"LS-Char-Extraction.pptx";
+            //pptfile = exe_root + @"\" + @"LS-SWIFT.pptx";
+            //pptfile = exe_root + @"\" + @"VoyagerWeeklyUpdate_18-07-27.pptx";
+
+
+
+            pptfile = exe_root + @"\" + @"LS-Char-Extraction.pptx";
             //pptfile = exe_root + @"\" + @"Flash_SJ_Pitch.ppt";
             //pptfile = exe_root + @"\" + @"9650_Intro_111110.ppt";
 
@@ -110,10 +267,10 @@ namespace fileHasherConverter
 
             //db = new DBConnect();
             //db.Insert("insert into weekly (filename, hashtext, imgthumb, imglarge) values ('LS_WEEKLY5', 'PO1 ET', '/img/weekly7/thumb.png', '/img/weekly7/HD.png') "); 
-
-            pptParser fe = new pptParser();
-            fe.GetMetaData(pptfile);
-
+            //MongoDBConnect mg = new MongoDBConnect();
+            //mg.Connect();
+            //mg.getDocuments();
+            
 
             ////print all ascii chars
 
@@ -129,20 +286,26 @@ namespace fileHasherConverter
             content_img_root = exe_root + @"\content-img";
 
             /* PPT Operations */
-
+            pptParser fe = new pptParser();
+            fe.GetMetaData();
             //fe.ppt2Image(pptfile, ppt_img_root, prefix);
+            //fe.ppt2ImageAlt(pptfile, ppt_img_root, prefix);
+
             //fe.ppt2pdf(pptfile, "8ih423yu673", pdf_root, "");
-            //fe.ppt2text(pptfile);
+            fe.ppt2text(pptfile);
             //fe.ppt2pdfByPage(pptfile, null, null, 1);
 
             /* PDF Operations */
-            string pdfFile = pdf_root + @"\8ih423yu673.pdf" ;
-            fe.pdf2Text(pdfFile);
+            //string pdfFile = pdf_root + @"\8ih423yu673.pdf";
+            //fe.pdf2Text(pdfFile);
             //fe.pdf2TextByPage(pdfFile, 2);
 
             //newHash.readPPTText(pptfile);
-
             //newHash.mergePPTs(exeBase + @"\" + @"ppt1.pptx", exeBase + @"\" + @"ppt2.pptx");
+
+            pptController pc = new pptController();
+
+
         }
 
     }

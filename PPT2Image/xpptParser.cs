@@ -18,6 +18,9 @@ using System.Data;
 // define custom keyValue pair for IDs
 using DataPair = System.Collections.Generic.KeyValuePair<string, int>;
 using System.Reflection;
+using MongoDB.Driver;
+using MongoDB.Bson;
+using System.Runtime.InteropServices;
 
 namespace fileHasherConverter
 {
@@ -30,58 +33,209 @@ namespace fileHasherConverter
         private bool ERROR_PPT2TEST = false;
 
         /* IDs Identifiers */
-        private string MOTHER_ID = null;
-        private string FILE_ID = null;
+        private ObjectId MOTHER_ID;
+        private ObjectId FILE_ID;
         private string FILE_PATH = null;
         private string FILE_TYPE = null;
+        private BsonDocument FILE_DOCUMENT = null;
 
         /* Paths */
-        private string DATA_ROOT = null; 
+        private string DATA_ROOT = null;
         private string PDF_ROOT = null;
         private string IMG_ROOT = null;
         private string IMG_CONTENT_ROOT = null;
         private string EXPORT_PATH = null;
 
+        /* CONTENT & COLLECTIONS  */
+        private IDictionary<string, object> PPT_META; //= new Dictionary<string, object>();
+        private IDictionary<string, object> PPT_SLIDES; //= new Dictionary<string, object>();
+
+        /*  powerpoint globals  */
+        private Microsoft.Office.Interop.PowerPoint.Application pptApplication;
+        private Presentation pptPresentation;
+
+        /* Database */
+        MongoDBConnect md;
+
+
         /* Constructor for globals */
         public pptParser()
         {
+            // inititalize 
             ERROR_PPT2PDF_FULL = false;
             ERROR_PPT2IMG = false;
             ERROR_PPT2TEST = false;
-            MOTHER_ID = null;
-            FILE_ID = null;
+            //MOTHER_ID = null;
+            //FILE_ID = null;
             FILE_PATH = null;
             FILE_TYPE = null;
+            PPT_META = new Dictionary<string, object>();
+            PPT_SLIDES = new Dictionary<string, object>();
+
 
         }
-        public pptParser(string motherid, string fileid)
+        public pptParser(ObjectId motherid, ObjectId fileid, string pptPath, string ppt_img_root, string content_img_root, BsonDocument filedocument)
         {
+
+            // inititalize vars
+            ERROR_PPT2PDF_FULL = false;
+            ERROR_PPT2IMG = false;
+            ERROR_PPT2TEST = false;
+            //MOTHER_ID = null;
+            //FILE_ID = null;
+            FILE_PATH = null;
+            FILE_TYPE = null;
+            PPT_META = new Dictionary<string, object>();
+            PPT_SLIDES = new Dictionary<string, object>();
+
+            // set PARAMS
             MOTHER_ID = motherid;
-            FILE_ID = fileid;
-
+            //FILE_ID = fileid;
+            FILE_PATH = pptPath;
+            IMG_ROOT = ppt_img_root;
+            IMG_CONTENT_ROOT = content_img_root;
+            FILE_DOCUMENT = filedocument;
+            md = new MongoDBConnect();
         }
 
-        public void GetMetaData(string pptfile)
+        private void open_PowerPoint()
         {
-            Console.WriteLine("PPT File Location:" + pptfile);
-            Microsoft.Office.Interop.PowerPoint.Application pptApplication = new Microsoft.Office.Interop.PowerPoint.Application();
-            Presentation pptPresentation = pptApplication.Presentations
-            .Open(pptfile, MsoTriState.msoFalse, MsoTriState.msoFalse, MsoTriState.msoFalse);
-
-            listallbuiltinPropertiesfromPowerpoint(pptPresentation, pptPresentation.BuiltInDocumentProperties);
-            pptPresentation.Close();
-
+            // initialize PPT application / open PPT  for processing 
+            pptApplication = new Microsoft.Office.Interop.PowerPoint.Application();
+            pptPresentation = pptApplication.Presentations.Open(FILE_PATH, MsoTriState.msoFalse, MsoTriState.msoFalse, MsoTriState.msoFalse);
+            pptApplication.DisplayAlerts = PowerPoint.PpAlertLevel.ppAlertsNone;
         }
 
+        private void close_PowerPoint()
+        {
+            // close/destroy PPT application / open PPT  for processing 
+            pptPresentation.Close();
+        }
 
-        public void listallbuiltinPropertiesfromPowerpoint(PowerPoint.Presentation presentation, object builtInProps)
+        public IDictionary<string, object> get_PPT_METADATA()
+        {
+            return PPT_META;
+        }
+
+        public IDictionary<string, object> get_Slide_Collection()
+        {
+            return PPT_SLIDES;
+        }
+
+        public void runPptParserFlow()
+        {
+            // define MS OFFICE PPT applications 
+            open_PowerPoint();
+
+            /* get ppt meta info */
+            GetMetaData();
+            Console.WriteLine("REWRITING META DICT");
+            // test 
+            foreach (KeyValuePair<string, object> kvp in PPT_META)
+            {
+                Console.WriteLine(string.Format("[{0},{1}]", kvp.Key, kvp.Value));
+            }
+            // end test 
+
+
+            /* connect database */
+            md.Connect("result_database");
+            /* LOOP Start: for every slide now   */
+
+            foreach (PowerPoint.Slide slide in pptPresentation.Slides)
+            {
+                // new entry post slide to slideDB -> get slide ID 
+                var id = md.newEmptyRecord("dataSlides");
+
+                Console.WriteLine("New ID created" + id);
+
+                PPT_SLIDES.Add(slide.SlideNumber.ToString(), id);
+
+                Dictionary<string, Object> fd = new Dictionary<string, object>();
+                fd.Add("source", "mother");
+                fd.Add("sourceID", MOTHER_ID);
+                fd.Add("filename", FILE_DOCUMENT["filename"].ToString());
+                fd.Add("filePath", FILE_PATH);
+                fd.Add("fileType", "*.pptx");
+                fd.Add("Slide Number", slide.SlideNumber);
+                fd.Add("PPT Title", PPT_META["Title"]);
+                fd.Add("Author", PPT_META["Author"]);
+                fd.Add("Last Author", PPT_META["Last author"]);
+                fd.Add("Last Modified", PPT_META["Last save time"]);
+                fd.Add("isProcessed", false);
+                fd.Add("isHashed", false);
+                fd.Add("type", "ppt");
+                // add tag field. 
+                List<Object> lt = new List<Object>();
+                fd.Add("tags", lt);
+
+                // define operation through filehash converter
+
+                // slide > ppt-2-img 
+                ppt2ImageBySlide(slide, id);
+
+                // slide > ppt-2-text 
+                Dictionary<string, Object> content = ppt2textBySlide(slide, id);
+                // add directly to mongoData ! DONT FORGET
+
+
+                // slide > ppt-2-content [ array of IDs --> post to contentDB ]
+                var listIDs = ppt2ContentImagesBySlide(slide, id);
+                fd.Add("Content Images", listIDs);
+
+
+                // create new Class entity for post 
+                mongoData mg = new mongoData();
+                mg.Id = id;
+
+                // update slide to slideDB 
+                mg.Data = new BsonDocument().AddRange(fd);
+                mg.Data.AddRange(content);
+                md.updateEntireRecord("dataSlides", id, mg);
+
+                // loop through: END 
+            }
+
+            // test content images export entire ppt. 
+            //ppt2ContentImages(pptPresentation, IMG_CONTENT_ROOT);
+
+            // close powerpoint 
+            close_PowerPoint();
+        }
+
+        public void GetMetaData()
         {
             Console.WriteLine("Writing List of MetaData\n-----------------------");
             try
             {
-                var builtinProps = presentation.BuiltInDocumentProperties; // don't strong cast this or you will get null
-                //var builtinProps = presentation.CustomDocumentProperties; // don't strong cast this or you will get null
-                GetBuiltInProperty(builtinProps);
+                dynamic builtInProps = pptPresentation.BuiltInDocumentProperties; // don't strong cast this or you will get null
+                if (builtInProps != null)
+                {
+                    try
+                    {
+                        foreach (var p in builtInProps)
+                        {
+                            try
+                            {
+                                Console.Write(p.Name + "(" + p.Type + ") \t:");
+                                Console.Write(p.Value + "\n");
+
+                                PPT_META.Add(p.Name, p.Value);
+                            }
+                            catch (Exception e)
+                            {
+                                Console.WriteLine("ERROR");
+                                PPT_META.Add(p.Name, "NA");
+                            }
+                        }
+                    }
+                    catch (Exception e)
+                    {
+                        // Property is missing
+                        Console.WriteLine(e.ToString());
+                    }
+
+                }
             }
             catch (Exception e)
             {
@@ -90,37 +244,6 @@ namespace fileHasherConverter
             }
             Console.WriteLine("-------------------\nDone. Writing List");
         }
-
-        internal void GetBuiltInProperty(dynamic builtInProps)
-        {
-            if (builtInProps != null)
-            {
-                try
-                {
-                    foreach (var p in builtInProps)
-                    {
-                        try
-                        {
-                            Console.Write(p.Name + "(" + p.Type + ") \t:");
-                            Console.Write(p.Value + "\n");
-                            ;
-                        }
-                        catch (Exception e)
-                        {
-                            Console.WriteLine("ERROR");
-                        }
-                    }
-                }
-                catch (Exception e)
-                {
-                    // Property is missing
-                    Console.WriteLine(e.ToString());
-                }
-
-            }
-        }
-
-
 
 
         public void pdf2Image(string pdfFile, string exportPath)
@@ -359,7 +482,6 @@ namespace fileHasherConverter
         }
 
 
-
         /**************************           FINAL PPT-to-Image       *****************************
          * http://www.free-power-point-templates.com/articles/c-code-to-convert-powerpoint-to-image/         
          */
@@ -379,14 +501,15 @@ namespace fileHasherConverter
             //slides to image
             int slide_count = pptPresentation.Slides.Count;
             Console.Write("count=" + slide_count);
+            Console.Write("Writing images to drive...");
             for (int i = 1; i <= slide_count; ++i)
             {
                 /* full HD -  Statistical Size: GIF < JPG < PNG */
-                pptPresentation.Slides[i].Export(exportPath + @"\" + "slide" + i + ".gif", "gif", pageWidth, pageHeight);
+                pptPresentation.Slides[i].Export(exportPath + @"\" + "slide_" + i + ".gif", "gif", pageWidth, pageHeight);
                 /* Thumbnail 3x*/
-                pptPresentation.Slides[i].Export(exportPath + @"\" + "thumb.slide" + i + "_3x.gif", "gif", (int)(pageWidth / 3.2), (int)(pageHeight / 3.2));
+                pptPresentation.Slides[i].Export(exportPath + @"\" + "thumb.slide_" + i + "_3x.gif", "gif", (int)(pageWidth / 3.2), (int)(pageHeight / 3.2));
                 /* Thumbnail 6x*/
-                pptPresentation.Slides[i].Export(exportPath + @"\" + "thumb.slide" + i + "_6x.gif", "gif", (int)(pageWidth / 6), (int)(pageHeight / 6));
+                pptPresentation.Slides[i].Export(exportPath + @"\" + "thumb.slide_" + i + "_6x.gif", "gif", (int)(pageWidth / 6), (int)(pageHeight / 6));
 
             }
 
@@ -395,6 +518,73 @@ namespace fileHasherConverter
             pptPresentation.Close();
         }
 
+        public void ppt2ImageAlt(string pptfilePath, string exportPath, string prefix)
+        {
+            Console.WriteLine("PPT File Location:" + pptfilePath);
+            Microsoft.Office.Interop.PowerPoint.Application pptApplication = new Microsoft.Office.Interop.PowerPoint.Application();
+            Presentation pptPresentation = pptApplication.Presentations
+            .Open(pptfilePath, MsoTriState.msoFalse, MsoTriState.msoFalse, MsoTriState.msoFalse);
+
+            int pageWidth = 800;
+            int pageHeight = (int)(pageWidth / pptPresentation.PageSetup.SlideWidth * pptPresentation.PageSetup.SlideHeight);
+
+            Console.WriteLine("w/H" + pageWidth + ":" + pageHeight);
+
+            //slides to image
+            int slide_count = pptPresentation.Slides.Count;
+            Console.Write("count=" + slide_count);
+            Console.Write("Writing images to drive...");
+            int i = 1;
+            foreach (PowerPoint.Slide slide in pptPresentation.Slides)
+            {
+                /* full HD -  Statistical Size: GIF < JPG < PNG */
+                slide.Export(exportPath + @"\" + "slide_" + i + ".gif", "gif", pageWidth, pageHeight);
+                /* Thumbnail 3x*/
+                slide.Export(exportPath + @"\" + "thumb.slide_" + i + "_3x.gif", "gif", (int)(pageWidth / 3.2), (int)(pageHeight / 3.2));
+                /* Thumbnail 6x*/
+                slide.Export(exportPath + @"\" + "thumb.slide_" + i + "_6x.gif", "gif", (int)(pageWidth / 6), (int)(pageHeight / 6));
+                i++;
+            }
+
+            //ppt2ContentImages(pptPresentation, exportPath.Replace(@"\ppt-img", @"\" + "content-img"));
+
+            pptPresentation.Close();
+        }
+
+
+        public void ppt2ImageBySlide(PowerPoint.Slide slide, ObjectId slideID) /* slide ID fron slideDB fron runner */
+        {
+            int pageWidth = 800;
+            int pageHeight = (int)(pageWidth / pptPresentation.PageSetup.SlideWidth * pptPresentation.PageSetup.SlideHeight);
+
+            try
+            {
+                /* full HD -  Statistical Size: GIF < JPG < PNG */
+                slide.Export(IMG_ROOT + @"\" + slideID + ".jpg", "jpg", pageWidth, pageHeight);
+                /* Thumbnail 3x*/
+                slide.Export(IMG_ROOT + @"\" + slideID + ".thumb" + "_3x.jpg", "jpg", (int)(pageWidth / 3.2), (int)(pageHeight / 3.2));
+                /* Thumbnail 6x*/
+                slide.Export(IMG_ROOT + @"\" + slideID + ".thumb" + "_6x.jpg", "jpg", (int)(pageWidth / 6), (int)(pageHeight / 6));
+            }
+            catch (Exception ex)
+            {
+                /* Error Report */
+                Dictionary<string, Object> dict = new Dictionary<string, Object>();
+                mongoData mg = new mongoData();
+                dict.Add("filename", FILE_DOCUMENT["filename"].ToString());
+                dict.Add("filePath", FILE_PATH);
+                dict.Add("fileType", "*.pptx");
+                dict.Add("slideNumber", slide.SlideNumber);
+                dict.Add("ErrorStacktrace", ex.ToString());
+                dict.Add("fromFunction", "ppt2ImageBySlide");
+                mg.Data = new BsonDocument().AddRange(dict);
+                md.postError("errorDB", mg);
+                /* END Error Report */
+
+                Console.WriteLine(ex.ToString());
+            }
+            Console.WriteLine("Ppt2Image Written");
+        }
 
         void ppt2ContentImages(Presentation pptPresentation, string exportPath)
         {
@@ -420,11 +610,84 @@ namespace fileHasherConverter
                         }
                     }
                 }
-                catch (Exception e)
+                catch (Exception ex)
                 {
-                    // TODO
+                    /* Error Report */
+                    Dictionary<string, Object> dict = new Dictionary<string, Object>();
+                    mongoData mg = new mongoData();
+                    dict.Add("filename", FILE_DOCUMENT["filename"].ToString());
+                    dict.Add("filePath", FILE_PATH);
+                    dict.Add("fileType", "*.pptx");
+                    dict.Add("slideNumber", slide.SlideNumber);
+                    dict.Add("ErrorStacktrace", ex.ToString());
+                    dict.Add("fromFunction", "ppt2ContentImages");
+                    mg.Data = new BsonDocument().AddRange(dict);
+                    md.postError("errorDB", mg);
+                    /* END Error Report */
                 }
             }
+        }
+
+
+        List<ObjectId> ppt2ContentImagesBySlide(PowerPoint.Slide slide, ObjectId slideID)
+        {
+            List<ObjectId> idList = new List<ObjectId>();
+
+            PowerPoint.Shapes slideShapes = slide.Shapes;
+            int count = 0;
+            try
+            {
+                foreach (PowerPoint.Shape shape in slideShapes)
+                {
+                    if (shape.Type == MsoShapeType.msoPicture)
+                    {
+                        // generate ID from database 
+                        var id = md.newEmptyRecord("contentIMG");
+
+
+                        //LinkFormat.SourceFullName contains the movie path 
+                        //get the path like this
+                        shape.Export(IMG_CONTENT_ROOT + @"\" + id + ".jpg", Microsoft.Office.Interop.PowerPoint.PpShapeFormat.ppShapeFormatJPG);
+
+                        //append content ID from database to list for parent 
+                        idList.Add(id);
+
+                        Console.WriteLine("Exported: " + IMG_CONTENT_ROOT + @"\" + id + ".jpg");
+                        //System.IO.File.Copy(shape.LinkFormat.SourceFullName, path + imageBase + @"\" + "content" + slide.SlideNumber + "_"+ count++ + ".png"); 
+
+
+                        // create new Class entity for post 
+                        mongoData mg = new mongoData();
+                        mg.Id = id;
+
+                        Dictionary<string, Object> fd = new Dictionary<string, Object>();
+                        List<Object> lt = new List<Object>();
+                        // link parent 
+                        fd.Add("sourceID", slideID);
+                        fd.Add("source", "dataSlides");
+                        fd.Add("tags", lt);
+                        // update slide to slideDB 
+                        mg.Data = new BsonDocument().AddRange(fd);
+                        md.updateEntireRecord("contentIMG", id, mg);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                /* Error Report */
+                Dictionary<string, Object> dict = new Dictionary<string, Object>();
+                mongoData mg = new mongoData();
+                dict.Add("filename", FILE_DOCUMENT["filename"].ToString());
+                dict.Add("filePath", FILE_PATH);
+                dict.Add("fileType", "*.pptx");
+                dict.Add("slideNumber", slide.SlideNumber);
+                dict.Add("ErrorStacktrace", ex.ToString());
+                dict.Add("fromFunction", "ppt2ContentImagesBySlide");
+                mg.Data = new BsonDocument().AddRange(dict);
+                md.postError("errorDB", mg);
+                /* END Error Report */
+            }
+            return idList;
         }
 
 
@@ -462,7 +725,7 @@ namespace fileHasherConverter
 
 
 
-        /* Version not working accurately [DO NOT USE]
+        /* Version not working accurately [USE WITH CAUTION]
          * PPT to Text 
          */
 
@@ -500,9 +763,9 @@ namespace fileHasherConverter
                             foreach (PowerPoint.TextRange paragraph in paragraphs)
                             {
                                 var text = paragraph.Text;
-                                text = text.Replace("\r", "");
+                                text = text.Replace("\r", "").Replace("\v", " ").Replace("\f", " ").Trim();
                                 text = Regex.Replace(text, @"[^\t\r\n\u0020-\u007E]+", string.Empty);
-                                text = Regex.Replace(text, @"[ ]{ 2,}", string.Empty);
+                                text = Regex.Replace(text, @"[ ]{ 2,}", " ");
                                 if (text.Length > 2)
                                 {
                                     slide_title = slide_title.Replace("NOTITLE", "").Replace("\v", " ").Replace("\f", " ") + text + "\n";
@@ -515,6 +778,18 @@ namespace fileHasherConverter
                 }
                 catch (Exception ex)
                 {
+                    /* Error Report */
+                    Dictionary<string, Object> dict = new Dictionary<string, Object>();
+                    mongoData mg = new mongoData();
+                    dict.Add("filename", FILE_DOCUMENT["filename"].ToString());
+                    dict.Add("filePath", FILE_PATH);
+                    dict.Add("fileType", "*.pptx");
+                    dict.Add("slideNumber", slide.SlideNumber);
+                    dict.Add("ErrorStacktrace", ex.ToString());
+                    dict.Add("fromFunction", "ppt2Text");
+                    mg.Data = new BsonDocument().AddRange(dict);
+                    md.postError("errorDB", mg);
+                    /* END Error Report */
                     Console.WriteLine(ex.ToString());
                 }
 
@@ -523,7 +798,7 @@ namespace fileHasherConverter
 
                 foreach (Microsoft.Office.Interop.PowerPoint.Shape shape in slide.Shapes)
                 {
-                    pps += readShape(shape);
+                    pps += readShape(shape, slide.SlideNumber);
                 }
 
                 pps = Regex.Replace(pps, @"[^\t\r\n\u0020-\u007E]+", string.Empty);
@@ -537,7 +812,87 @@ namespace fileHasherConverter
             pptPresentation.Close();
         }
 
-        private string readShape(Microsoft.Office.Interop.PowerPoint.Shape shape)
+
+        public Dictionary<string, Object> ppt2textBySlide(PowerPoint.Slide slide, ObjectId slideID)
+        {
+
+            System.IO.File.WriteAllText(@".\OutText.md", "#Summary of slides:\n");
+            //if (slide.SlideNumber > 20) return;
+
+            string pps = "";
+            string slide_title = "NOTITLE"; //  slide.Shapes.Title.TextFrame.TextRange.Text;            
+            //string slide_title = slide.Shapes.Title.TextFrame.TextRange.Text;
+
+            try
+            {
+                if (slide.Shapes.Title.HasTextFrame == Microsoft.Office.Core.MsoTriState.msoTrue)
+                {
+                    var textFrame = slide.Shapes.Title.TextFrame;
+                    if (textFrame.HasText == Microsoft.Office.Core.MsoTriState.msoTrue)
+                    {
+                        var textRange = textFrame.TextRange;
+                        var paragraphs = textRange.Paragraphs(-1, -1);
+                        foreach (PowerPoint.TextRange paragraph in paragraphs)
+                        {
+                            var text = paragraph.Text;
+                            text = text.Replace("\r", "").Replace("\v", " ").Replace("\f", " ").Trim();
+                            text = Regex.Replace(text, @"[^\t\r\n\u0020-\u007E]+", string.Empty);
+                            text = Regex.Replace(text, @"[ ]{ 2,}", " ");
+                            if (text.Length > 2)
+                            {
+                                slide_title = slide_title.Replace("NOTITLE", "").Replace("\v", " ").Replace("\f", " ") + text + "\n";
+                                slide_title = Regex.Replace(slide_title, @"[^\t\r\n\u0020-\u007E]+", string.Empty);
+                            }
+
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex.ToString());
+                Console.WriteLine("Started Writing Error");
+
+                /* Error Report */
+                Dictionary<string, Object> dict = new Dictionary<string, Object>();
+                mongoData mg = new mongoData();
+                dict.Add("filename", FILE_DOCUMENT["filename"].ToString());
+                dict.Add("filePath", FILE_PATH);
+                dict.Add("fileType", "*.pptx");
+                dict.Add("slideNumber", slide.SlideNumber);
+                dict.Add("ErrorStacktrace", ex.ToString());
+                dict.Add("fromFunction", "ppt2textBySlide->HasTitle");
+                mg.Data = new BsonDocument().AddRange(dict);
+                md.postError("errorDB", mg);
+                /* END Error Report */
+            }
+
+            Console.WriteLine("@" + slide_title);
+
+            foreach (Microsoft.Office.Interop.PowerPoint.Shape shape in slide.Shapes)
+            {
+                pps += readShape(shape, slide.SlideNumber);
+            }
+
+            pps = Regex.Replace(pps, @"[^\t\r\n\u0020-\u007E]+", string.Empty);
+
+            Console.WriteLine("Slide #" + slide.SlideNumber + "\n-----------------------\n" + pps + "\n-----------------------\n");
+
+            System.IO.File.AppendAllText(@".\OutText.md", "---\nSlide #" + slide.SlideNumber + "\n# " + slide_title);
+            System.IO.File.AppendAllText(@".\OutText.md", "\n" + pps + "\n");
+
+            pps = "# " + slide_title + "\n" + pps;
+
+            Dictionary<string, Object> fd = new Dictionary<string, object>();
+            fd.Add("Title", slide_title);
+            fd.Add("Content", pps);
+
+            return fd;
+        }
+
+
+
+        private string readShape(Microsoft.Office.Interop.PowerPoint.Shape shape, int slideNumber)
         {
             string str = "";
 
@@ -566,7 +921,7 @@ namespace fileHasherConverter
                 var p = shape.Ungroup();
                 foreach (Microsoft.Office.Interop.PowerPoint.Shape shp in p)
                 {
-                    str += readShape(shp);
+                    str += readShape(shp, slideNumber);
                 }
             }
             //read tables in ppt
@@ -621,32 +976,72 @@ namespace fileHasherConverter
                 if (t.HasDataTable)
                 {
                     Console.WriteLine("Has DataTable: True");
-                    System.Data.DataTable dp = (System.Data.DataTable)shape.Chart.DataTable;
-                    string strRowCommaSeparated = "";
-                    foreach (DataRow dr in dp.Rows)
+                    try
                     {
-                        for (int i = 0; i < dr.ItemArray.Length; i++)
+                        System.Data.DataTable dp = (System.Data.DataTable)shape.Chart.DataTable;
+                        string strRowCommaSeparated = "";
+                        foreach (DataRow dr in dp.Rows)
                         {
-                            strRowCommaSeparated += strRowCommaSeparated == "" ? dr.ItemArray[i].ToString() : ("," + strRowCommaSeparated);
+                            for (int i = 0; i < dr.ItemArray.Length; i++)
+                            {
+                                strRowCommaSeparated += strRowCommaSeparated == "" ? dr.ItemArray[i].ToString() : ("," + strRowCommaSeparated);
+                            }
                         }
-                    }
-                    Console.WriteLine("\n\n\t\tOur DataTable : " + strRowCommaSeparated);
+                        Console.WriteLine("\n\n\t\tOur DataTable : " + strRowCommaSeparated);
 
-                    var p = t.DataTable;
-                    str += t.DataTable.ToString(); //.DataTable.ToString();
+                        var p = t.DataTable;
+                        str += t.DataTable.ToString(); //.DataTable.ToString();
+                    }
+                    catch (Exception ex)
+                    {
+                        /* Error Report */
+                        Dictionary<string, Object> dict = new Dictionary<string, Object>();
+                        mongoData mg = new mongoData();
+                        dict.Add("filename", FILE_DOCUMENT["filename"].ToString());
+                        dict.Add("filePath", FILE_PATH);
+                        dict.Add("fileType", "*.pptx");
+                        dict.Add("slideNumber", slideNumber);
+                        dict.Add("ErrorStacktrace", ex.ToString());
+                        dict.Add("fromFunction", "readShape->HasDataTable");
+                        mg.Data = new BsonDocument().AddRange(dict);
+                        md.postError("errorDB", mg);
+                        /* END Error Report */
+                        Console.WriteLine("DataTable Error:\n" + ex.ToString());
+                    }
                 }
 
-                // Extracting series labels and count 
-                Microsoft.Office.Interop.PowerPoint.SeriesCollection tmp = (Microsoft.Office.Interop.PowerPoint.SeriesCollection)t.SeriesCollection();
-                Console.WriteLine("Series Count:" + tmp.Count);
-                t.ApplyDataLabels();
-                for (int j = 1; j <= tmp.Count; ++j)
+
+                try
                 {
-                    Microsoft.Office.Interop.PowerPoint.Series aSeries = tmp.Item(j);
-                    Console.WriteLine("Series Name: " + aSeries.Name);
-                    //Microsoft.Office.Interop.PowerPoint.Points pts = tmp.Item(j).Points(); // # point in the chart per series - meaning X axis for a pareto chart
-                    //Console.WriteLine("Points #:" + pts.Count);
-                    //Console.WriteLine(pts.Item(2).Name);
+
+                    // Extracting series labels and count 
+                    Microsoft.Office.Interop.PowerPoint.SeriesCollection tmp = (Microsoft.Office.Interop.PowerPoint.SeriesCollection)t.SeriesCollection();
+                    Console.WriteLine("Series Count:" + tmp.Count);
+                    t.ApplyDataLabels();
+                    for (int j = 1; j <= tmp.Count; ++j)
+                    {
+                        Microsoft.Office.Interop.PowerPoint.Series aSeries = tmp.Item(j);
+                        Console.WriteLine("Series Name: " + aSeries.Name);
+                        //Microsoft.Office.Interop.PowerPoint.Points pts = tmp.Item(j).Points(); // # point in the chart per series - meaning X axis for a pareto chart
+                        //Console.WriteLine("Points #:" + pts.Count);
+                        //Console.WriteLine(pts.Item(2).Name);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    /* Error Report */
+                    Dictionary<string, Object> dict = new Dictionary<string, Object>();
+                    mongoData mg = new mongoData();
+                    dict.Add("filename", FILE_DOCUMENT["filename"].ToString());
+                    dict.Add("filePath", FILE_PATH);
+                    dict.Add("fileType", "*.pptx");
+                    dict.Add("slideNumber", slideNumber);
+                    dict.Add("ErrorStacktrace", ex.ToString());
+                    dict.Add("fromFunction", "readShape->SeriesCollection");
+                    mg.Data = new BsonDocument().AddRange(dict);
+                    md.postError("errorDB", mg);
+                    /* END Error Report */
+                    Console.WriteLine("ChartDataSeries Error:\n" + ex.ToString());
                 }
 
                 //Excel Route for chart series data extraction 
@@ -655,26 +1050,85 @@ namespace fileHasherConverter
                 if (!t.ChartData.IsLinked)
                 {
                     Console.WriteLine("Has Embedded Excel: True");
-                    Excel.Workbook eWorkbook = (Excel.Workbook)pChartData.Workbook;
-                    Excel.Worksheet eWorksheet = (Excel.Worksheet)eWorkbook.Worksheets[1];
-                    var columnsRange = eWorksheet.UsedRange.Columns;
-                    var rowsRange = eWorksheet.UsedRange.Rows;
-                    var columnCount = columnsRange.Columns.Count;
-                    var rowCount = rowsRange.Rows.Count;
-                    //Console.WriteLine("r#, c# :  " + rowCount + ":" + columnCount);
-
-                    foreach (Excel.Range c in eWorksheet.UsedRange)
+                    Excel.Workbook eWorkbook = null;
+                    Excel.Worksheet eWorksheet = null; 
+                    try
                     {
-                        string changedCell = c.get_Address(Type.Missing, Type.Missing, Excel.XlReferenceStyle.xlA1, Type.Missing, Type.Missing);
-                        Console.Write(" | " + c.Value2);
+                        //Microsoft.Office.Interop.Excel.Application xApp = new Microsoft.Office.Interop.Excel.Application();
+                        //xApp.DisplayAlerts = false;
+
+                        //((Excel.Workbook)pChartData.Workbook).Application.DisplayAlerts = false;
+                        //((Excel.Workbook)pChartData.Workbook).SaveCopyAs("H:\\temp.xls");
+
+                        //Console.WriteLine("Workbook Save Successful");
+
+                        eWorkbook = (Excel.Workbook)pChartData.Workbook;
+
+                        //eWorkbook.Application.DisplayAlerts = false; 
+
+                        eWorksheet = (Excel.Worksheet)eWorkbook.Worksheets[1];
+
+                        var columnsRange = eWorksheet.UsedRange.Columns;
+                        var rowsRange = eWorksheet.UsedRange.Rows;
+                        var columnCount = columnsRange.Columns.Count;
+                        var rowCount = rowsRange.Rows.Count;
+                        //Console.WriteLine("r#, c# :  " + rowCount + ":" + columnCount);
+
+                        //Excel.Range p = eWorksheet.UsedRange;
+                        //Console.WriteLine ( p.Worksheet.ListObjects);
+
+                        foreach (Excel.Range c in eWorksheet.UsedRange)
+                        {
+                            string changedCell = c.get_Address(Type.Missing, Type.Missing, Excel.XlReferenceStyle.xlA1, Type.Missing, Type.Missing);
+                            Console.Write(" | " + /*changedCell+ "="+*/  c.Value2);
+                        }
+                        eWorkbook.Close();
                     }
-                    eWorkbook.Close();
+                    catch (Exception ex)
+                    {
+                        /* Error Report */
+                        Dictionary<string, Object> dict = new Dictionary<string, Object>();
+                        mongoData mg = new mongoData();
+                        dict.Add("filename", FILE_DOCUMENT["filename"].ToString());
+                        dict.Add("filePath", FILE_PATH);
+                        dict.Add("fileType", "*.pptx");
+                        dict.Add("slideNumber", slideNumber);
+                        dict.Add("ErrorStacktrace", ex.ToString());
+                        dict.Add("fromFunction", "readShape->HasExcel");
+                        mg.Data = new BsonDocument().AddRange(dict);
+                        md.postError("errorDB", mg);
+                        /* END Error Report */
+
+                        Console.WriteLine("Error Reported.\nExcel Error:\n" + ex.ToString());
+                        Console.WriteLine("Excel Handle Release started  :->");
+
+                        // WORKING VERSION OR EXCEL HANDLE RELEASE
+                        if (eWorksheet != null) Marshal.ReleaseComObject(eWorksheet);
+                        if (eWorkbook != null) Marshal.ReleaseComObject(eWorkbook);
+                        Console.WriteLine("Excel Handle Released <-:");
+                        Console.WriteLine("[DEBUG] waiting for user...");
+                        //Console.ReadKey();
+
+                    }
+                    finally
+                    {
+                        // ENABLE FOR DEBUG ONLY or else eWorkbook.Close() is enough in main block
+                        // WORKING VERSION OR EXCEL HANDLE RELEASE
+                        //if (eWorksheet != null) Marshal.ReleaseComObject(eWorksheet);
+                        //if (eWorkbook != null) Marshal.ReleaseComObject(eWorkbook);
+                        //Console.WriteLine("Excel Handle Released <-:");
+                        //Console.WriteLine("[DEBUG] waiting for user...");
+                        //Console.ReadKey();
+
+                    }
+
+
                 }
-                else if (t.ChartData.IsLinked)
-                {
-                    // add a note for PDF extraction and flagging
-                }
-                
+                //else if (t.ChartData.IsLinked)
+                //{
+                //    // add a note for PDF extraction and flagging
+                //}
+
             }
 
             //else if (shape.Type == MsoShapeType.msoTextBox || shape.Type == MsoShapeType.msoAutoShape)
@@ -738,7 +1192,7 @@ namespace fileHasherConverter
 
             }
         }
-        
+
     }
 }
 

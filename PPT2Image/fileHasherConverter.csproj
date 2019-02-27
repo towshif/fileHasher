@@ -150,11 +150,12 @@
   <ItemGroup>
     <Compile Include="pptController.cs" />
     <Compile Include="DBConnect.cs" />
+    <Compile Include="mongoData.cs" />
     <Compile Include="xpdfParser.cs" />
     <Compile Include="xdocParser.cs" />
-    <Compile Include="xpptParser - Copy.cs" />
+    <Compile Include="__BACKUP__xpptParser.cs" />
     <Compile Include="xpptParser.cs" />
-    <Compile Include="FileHash.cs" />
+    <Compile Include="__BACKUP__FileHash.cs" />
     <Compile Include="MongoDBConnect.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
