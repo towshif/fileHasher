@@ -77,7 +77,7 @@ namespace fileHasherConverter
         public pptParser(ObjectId motherid, ObjectId fileid, string pptPath, string ppt_img_root, string content_img_root, BsonDocument filedocument)
         {
 
-            // inititalize vars
+            // inititalize variables
             ERROR_PPT2PDF_FULL = false;
             ERROR_PPT2IMG = false;
             ERROR_PPT2TEST = false;
