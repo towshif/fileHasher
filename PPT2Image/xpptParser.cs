@@ -88,7 +88,7 @@ namespace fileHasherConverter
             PPT_META = new Dictionary<string, object>();
             PPT_SLIDES = new Dictionary<string, object>();
 
-            // set PARAMS
+            // set / update PARAMS
             MOTHER_ID = motherid;
             //FILE_ID = fileid;
             FILE_PATH = pptPath;
