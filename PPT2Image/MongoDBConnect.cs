@@ -26,7 +26,7 @@ namespace fileHasherConverter
             try
             {
                 client = new MongoClient(connectionString);
-                Console.WriteLine("Connected");
+                //Console.WriteLine("Connected");
                 status = true;
                 //Console.ReadKey();
                 db = client.GetDatabase(databaseName);
@@ -71,7 +71,7 @@ namespace fileHasherConverter
 
             var replaceOneResult = collection.ReplaceOne(filter, dt.ToBsonDocument());
 
-            Console.WriteLine("replacement result: " + replaceOneResult); 
+            //Console.WriteLine("replacement result: " + replaceOneResult); 
 
         }
 

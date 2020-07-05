@@ -12,7 +12,7 @@ using PowerPoint = Microsoft.Office.Interop.PowerPoint;
 using Microsoft.Office.Interop.Excel;
 using Excel = Microsoft.Office.Interop.Excel;
 //using Microsoft.Office.Interop.Graph; 
-using ch = Microsoft.Office.Interop.Graph.Chart;
+//using ch = Microsoft.Office.Interop.Graph.Chart;
 using System.Text.RegularExpressions;
 using System.Data;
 // define custom keyValue pair for IDs
@@ -21,6 +21,7 @@ using System.Reflection;
 using MongoDB.Driver;
 using MongoDB.Bson;
 using System.Runtime.InteropServices;
+using System.IO;
 
 namespace fileHasherConverter
 {
@@ -96,14 +97,27 @@ namespace fileHasherConverter
             IMG_CONTENT_ROOT = content_img_root;
             FILE_DOCUMENT = filedocument;
             md = new MongoDBConnect();
+
+            //Console.WriteLine("FILE_PATH:" + FILE_PATH + " IMG_ROOT:" + IMG_ROOT);
+
         }
 
-        private void open_PowerPoint()
+        private bool open_PowerPoint()
         {
-            // initialize PPT application / open PPT  for processing 
-            pptApplication = new Microsoft.Office.Interop.PowerPoint.Application();
-            pptPresentation = pptApplication.Presentations.Open(FILE_PATH, MsoTriState.msoFalse, MsoTriState.msoFalse, MsoTriState.msoFalse);
-            pptApplication.DisplayAlerts = PowerPoint.PpAlertLevel.ppAlertsNone;
+            if (File.Exists(@FILE_PATH))
+            {
+                // initialize PPT application / open PPT  for processing 
+                pptApplication = new Microsoft.Office.Interop.PowerPoint.Application();
+                pptPresentation = pptApplication.Presentations.Open(FILE_PATH, MsoTriState.msoFalse, MsoTriState.msoFalse, MsoTriState.msoFalse);
+                pptApplication.DisplayAlerts = PowerPoint.PpAlertLevel.ppAlertsNone;
+
+                return true;
+            }
+            else
+            {
+                Console.WriteLine("Bad File Path: " + this.FILE_PATH + " ... Skipping File.");
+                return false;
+            }
         }
 
         private void close_PowerPoint()
@@ -122,90 +136,165 @@ namespace fileHasherConverter
             return PPT_SLIDES;
         }
 
-        public void runPptParserFlow()
+        public bool runPptParserFlow()
         {
             // define MS OFFICE PPT applications 
-            open_PowerPoint();
-
-            /* get ppt meta info */
-            GetMetaData();
-            Console.WriteLine("REWRITING META DICT");
-            // test 
-            foreach (KeyValuePair<string, object> kvp in PPT_META)
+            if (!open_PowerPoint())
             {
-                Console.WriteLine(string.Format("[{0},{1}]", kvp.Key, kvp.Value));
-            }
-            // end test 
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine("[ERROR] Opening Powerpoint failed.");
+                Console.ForegroundColor = ConsoleColor.White;
+                Console.WriteLine();
 
-
-            /* connect database */
-            md.Connect("result_database");
-            /* LOOP Start: for every slide now   */
-
-            foreach (PowerPoint.Slide slide in pptPresentation.Slides)
-            {
-                // new entry post slide to slideDB -> get slide ID 
-                var id = md.newEmptyRecord("dataSlides");
-
-                Console.WriteLine("New ID created" + id);
-
-                PPT_SLIDES.Add(slide.SlideNumber.ToString(), id);
-
-                Dictionary<string, Object> fd = new Dictionary<string, object>();
-                fd.Add("source", "mother");
-                fd.Add("sourceID", MOTHER_ID);
-                fd.Add("filename", FILE_DOCUMENT["filename"].ToString());
-                fd.Add("filePath", FILE_PATH);
-                fd.Add("fileType", "*.pptx");
-                fd.Add("Slide Number", slide.SlideNumber);
-                fd.Add("PPT Title", PPT_META["Title"]);
-                fd.Add("Author", PPT_META["Author"]);
-                fd.Add("Last Author", PPT_META["Last author"]);
-                fd.Add("Last Modified", PPT_META["Last save time"]);
-                fd.Add("isProcessed", false);
-                fd.Add("isHashed", false);
-                fd.Add("type", "ppt");
-                // add tag field. 
-                List<Object> lt = new List<Object>();
-                fd.Add("tags", lt);
-
-                // define operation through filehash converter
-
-                // slide > ppt-2-img 
-                ppt2ImageBySlide(slide, id);
-
-                // slide > ppt-2-text 
-                Dictionary<string, Object> content = ppt2textBySlide(slide, id);
-                // add directly to mongoData ! DONT FORGET
-
-
-                // slide > ppt-2-content [ array of IDs --> post to contentDB ]
-                var listIDs = ppt2ContentImagesBySlide(slide, id);
-                fd.Add("Content Images", listIDs);
-
-
-                // create new Class entity for post 
-                mongoData mg = new mongoData();
-                mg.Id = id;
-
-                // update slide to slideDB 
-                mg.Data = new BsonDocument().AddRange(fd);
-                mg.Data.AddRange(content);
-                md.updateEntireRecord("dataSlides", id, mg);
-
-                // loop through: END 
+                return false;
             }
 
-            // test content images export entire ppt. 
-            //ppt2ContentImages(pptPresentation, IMG_CONTENT_ROOT);
+            else
+            {
+                try
+                {
+                    /* get ppt meta info */
+                    GetMetaData();
+                    //Console.WriteLine("REWRITING META DICT");
+                    // test 
+                    //foreach (KeyValuePair<string, object> kvp in PPT_META)
+                    //{
+                    //    Console.WriteLine(string.Format("[{0},{1}]", kvp.Key, kvp.Value));
+                    //}
+                    // end test 
 
-            // close powerpoint 
-            close_PowerPoint();
+
+                    /* connect database */
+                    md.Connect("result_database");
+                    /* LOOP Start: for every slide now   */
+
+                    // Show Progress bar 
+                    int totalSlides = pptPresentation.Slides.Count;
+                    int counter = 0;
+                    Console.ForegroundColor = ConsoleColor.Cyan;
+                    Console.WriteLine("Processing " + totalSlides + " Slides || File: " + FILE_PATH);
+                    Console.ForegroundColor = ConsoleColor.White;
+                    //Console.Write("*************************");
+
+                    foreach (PowerPoint.Slide slide in pptPresentation.Slides)
+                    {
+                        //Console.Write( ++sr );
+                        DrawTextProgressBar(++counter, totalSlides);
+
+                        // new entry post slide to slideDB -> get slide ID 
+                        var id = md.newEmptyRecord("dataSlides");
+
+                        //Console.WriteLine("New ID created" + id);
+
+                        PPT_SLIDES.Add(slide.SlideNumber.ToString(), id);
+
+                        Dictionary<string, Object> fd = new Dictionary<string, object>();
+                        fd.Add("source", "mother");
+                        fd.Add("sourceID", MOTHER_ID);
+                        fd.Add("filename", FILE_DOCUMENT["filename"].ToString());
+                        fd.Add("filePath", FILE_PATH);
+                        fd.Add("fileType", "*.pptx");
+                        fd.Add("Slide Number", slide.SlideNumber);
+                        fd.Add("PPT Title", PPT_META["Title"]);
+                        fd.Add("Author", PPT_META["Author"]);
+                        fd.Add("Last Author", PPT_META["Last author"]);
+                        fd.Add("Last Modified", PPT_META["Last save time"]);
+                        fd.Add("isProcessed", false);
+                        fd.Add("isHashed", false);
+                        fd.Add("type", "ppt");
+                        // add tag field. 
+                        List<Object> lt = new List<Object>();
+                        fd.Add("tags", lt);
+
+                        // define operation through filehash converter
+
+                        // slide > ppt-2-img 
+                        /* Time Consuming  */
+                        ppt2ImageBySlide(slide, id);
+
+                        // slide > ppt-2-text 
+                        //Dictionary<string, Object> content = ppt2textBySlide(slide, id);
+                        Dictionary<string, Object> content = new Dictionary<string, object>();
+                        content.Add("test", "0");
+                        // add directly to mongoData ! DONT FORGET
+
+
+                        // slide > ppt-2-content [ array of IDs --> post to contentDB ]
+                        var listIDs = ppt2ContentImagesBySlide(slide, id);
+                        //var listIDs = [];
+                        fd.Add("Content Images", listIDs);
+
+
+                        // create new Class entity for post 
+                        mongoData mg = new mongoData();
+                        mg.Id = id;
+
+                        // update slide to slideDB 
+                        mg.Data = new BsonDocument().AddRange(fd);
+                        mg.Data.AddRange(content);
+                        md.updateEntireRecord("dataSlides", id, mg);
+
+                        // loop through: END 
+                    }
+
+                    // test content images export entire ppt. 
+                    //ppt2ContentImages(pptPresentation, IMG_CONTENT_ROOT);
+
+                    // close powerpoint 
+                    close_PowerPoint();
+                }
+                catch (Exception ex)
+                {
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine("[ERROR] Processing File Failed. Internal Error.");
+                    Console.WriteLine(ex.ToString());
+                    Console.ForegroundColor = ConsoleColor.White;
+                    Console.WriteLine();
+
+                    return false;
+
+                }
+            }
+            Console.WriteLine();
+            return true;
+        }
+
+        private void DrawTextProgressBar(int progress, int total)
+        {
+            //draw empty progress bar
+            Console.CursorLeft = 0;
+            Console.Write("["); //start
+            Console.CursorLeft = 32;
+            Console.Write("]"); //end
+            Console.CursorLeft = 1;
+            float onechunk = 31.0f / total;
+
+            //draw filled part
+            int position = 1;
+            for (int i = 0; i < onechunk * progress; i++)
+            {
+                Console.BackgroundColor = ConsoleColor.Green;
+                Console.CursorLeft = position++;
+                Console.Write(" ");
+            }
+
+            //draw unfilled part
+            for (int i = position; i <= 31; i++)
+            {
+                Console.BackgroundColor = ConsoleColor.White;
+                Console.CursorLeft = position++;
+                Console.Write(" ");
+            }
+
+            //draw totals
+            Console.CursorLeft = 34;
+            Console.BackgroundColor = ConsoleColor.Black;
+            Console.Write(progress.ToString() + " of " + total.ToString() + "    "); //blanks at the end remove any excess
         }
 
         public void GetMetaData()
         {
-            Console.WriteLine("Writing List of MetaData\n-----------------------");
+            //Console.WriteLine("Writing List of MetaData\n-----------------------");
             try
             {
                 dynamic builtInProps = pptPresentation.BuiltInDocumentProperties; // don't strong cast this or you will get null
@@ -217,14 +306,14 @@ namespace fileHasherConverter
                         {
                             try
                             {
-                                Console.Write(p.Name + "(" + p.Type + ") \t:");
-                                Console.Write(p.Value + "\n");
+                                //Console.Write(p.Name + "(" + p.Type + ") \t:");
+                                //Console.Write(p.Value + "\n");
 
                                 PPT_META.Add(p.Name, p.Value);
                             }
                             catch (Exception e)
                             {
-                                Console.WriteLine("ERROR");
+                                //Console.WriteLine("ERROR");
                                 PPT_META.Add(p.Name, "NA");
                             }
                         }
@@ -242,7 +331,7 @@ namespace fileHasherConverter
                 // Ignorer l'erreur
                 //Log.Warn("Erreur inattendue à la lecture des propriétés internes du document", e);
             }
-            Console.WriteLine("-------------------\nDone. Writing List");
+            //Console.WriteLine("-------------------\nDone. Writing List");
         }
 
 
@@ -583,11 +672,12 @@ namespace fileHasherConverter
 
                 Console.WriteLine(ex.ToString());
             }
-            Console.WriteLine("Ppt2Image Written");
+            //Console.WriteLine("Ppt2Image Written");
         }
 
         void ppt2ContentImages(Presentation pptPresentation, string exportPath)
         {
+            bool verbose = false;
             //slide extract image content
             // https://stackoverflow.com/questions/4990825/export-movies-from-powerpoint-to-file-in-c-sharp
             //https://stackoverflow.com/questions/42442659/c-sharp-save-ppt-shape-msopicture-as-image-w-office-interop
@@ -605,7 +695,7 @@ namespace fileHasherConverter
                             //LinkFormat.SourceFullName contains the movie path 
                             //get the path like this
                             shape.Export(exportPath + @"\" + "content" + slide.SlideNumber + "_" + count++ + ".png", Microsoft.Office.Interop.PowerPoint.PpShapeFormat.ppShapeFormatPNG);
-                            Console.WriteLine("Exported" + exportPath + @"\" + "content" + slide.SlideNumber + "_" + count++ + ".png");
+                            if (verbose) Console.WriteLine("Exported" + exportPath + @"\" + "content" + slide.SlideNumber + "_" + count++ + ".png");
                             //System.IO.File.Copy(shape.LinkFormat.SourceFullName, path + imageBase + @"\" + "content" + slide.SlideNumber + "_"+ count++ + ".png"); 
                         }
                     }
@@ -631,6 +721,7 @@ namespace fileHasherConverter
 
         List<ObjectId> ppt2ContentImagesBySlide(PowerPoint.Slide slide, ObjectId slideID)
         {
+            bool verbose = false;
             List<ObjectId> idList = new List<ObjectId>();
 
             PowerPoint.Shapes slideShapes = slide.Shapes;
@@ -652,7 +743,7 @@ namespace fileHasherConverter
                         //append content ID from database to list for parent 
                         idList.Add(id);
 
-                        Console.WriteLine("Exported: " + IMG_CONTENT_ROOT + @"\" + id + ".jpg");
+                        if (verbose) Console.WriteLine("Exported: " + IMG_CONTENT_ROOT + @"\" + id + ".jpg");
                         //System.IO.File.Copy(shape.LinkFormat.SourceFullName, path + imageBase + @"\" + "content" + slide.SlideNumber + "_"+ count++ + ".png"); 
 
 
@@ -794,7 +885,7 @@ namespace fileHasherConverter
                 }
 
 
-                Console.WriteLine("@" + slide_title);
+                //Console.WriteLine("@" + slide_title);
 
                 foreach (Microsoft.Office.Interop.PowerPoint.Shape shape in slide.Shapes)
                 {
@@ -804,7 +895,7 @@ namespace fileHasherConverter
                 pps = Regex.Replace(pps, @"[^\t\r\n\u0020-\u007E]+", string.Empty);
 
 
-                Console.WriteLine("Slide #" + slide.SlideNumber + "\n-----------------------\n" + pps + "\n-----------------------\n");
+                //Console.WriteLine("Slide #" + slide.SlideNumber + "\n-----------------------\n" + pps + "\n-----------------------\n");
 
                 System.IO.File.AppendAllText(@".\OutText.md", "---\nSlide #" + slide.SlideNumber + "\n# " + slide_title);
                 System.IO.File.AppendAllText(@".\OutText.md", "\n" + pps + "\n");
@@ -813,8 +904,10 @@ namespace fileHasherConverter
         }
 
 
+        // remove Console.WriteLine = verbose
         public Dictionary<string, Object> ppt2textBySlide(PowerPoint.Slide slide, ObjectId slideID)
         {
+            bool verbose = false;
 
             System.IO.File.WriteAllText(@".\OutText.md", "#Summary of slides:\n");
             //if (slide.SlideNumber > 20) return;
@@ -867,7 +960,7 @@ namespace fileHasherConverter
                 /* END Error Report */
             }
 
-            Console.WriteLine("@" + slide_title);
+            if (verbose) Console.WriteLine("@" + slide_title);
 
             foreach (Microsoft.Office.Interop.PowerPoint.Shape shape in slide.Shapes)
             {
@@ -876,7 +969,7 @@ namespace fileHasherConverter
 
             pps = Regex.Replace(pps, @"[^\t\r\n\u0020-\u007E]+", string.Empty);
 
-            Console.WriteLine("Slide #" + slide.SlideNumber + "\n-----------------------\n" + pps + "\n-----------------------\n");
+            if (verbose) Console.WriteLine("Slide #" + slide.SlideNumber + "\n-----------------------\n" + pps + "\n-----------------------\n");
 
             System.IO.File.AppendAllText(@".\OutText.md", "---\nSlide #" + slide.SlideNumber + "\n# " + slide_title);
             System.IO.File.AppendAllText(@".\OutText.md", "\n" + pps + "\n");
@@ -894,6 +987,7 @@ namespace fileHasherConverter
 
         private string readShape(Microsoft.Office.Interop.PowerPoint.Shape shape, int slideNumber)
         {
+            bool verbose = false;
             string str = "";
 
             // extract text 
@@ -963,19 +1057,19 @@ namespace fileHasherConverter
             }
             else if (shape.HasChart == MsoTriState.msoTrue)
             {
-                Console.WriteLine("Has Chart: True");
+                if (verbose) Console.WriteLine("Has Chart: True");
                 Microsoft.Office.Interop.PowerPoint.Chart t = shape.Chart;
                 //string text = ""; 
                 if (t.HasTitle)
                 {
-                    Console.WriteLine("Has Title: True");
-                    Console.WriteLine("Title:" + t.ChartTitle.Text.ToString());
+                    if (verbose) Console.WriteLine("Has Title: True");
+                    if (verbose) Console.WriteLine("Title:" + t.ChartTitle.Text.ToString());
                     str += t.ChartTitle.Text.ToString() + " ";
                 }
 
                 if (t.HasDataTable)
                 {
-                    Console.WriteLine("Has DataTable: True");
+                    if (verbose) Console.WriteLine("Has DataTable: True");
                     try
                     {
                         System.Data.DataTable dp = (System.Data.DataTable)shape.Chart.DataTable;
@@ -987,7 +1081,7 @@ namespace fileHasherConverter
                                 strRowCommaSeparated += strRowCommaSeparated == "" ? dr.ItemArray[i].ToString() : ("," + strRowCommaSeparated);
                             }
                         }
-                        Console.WriteLine("\n\n\t\tOur DataTable : " + strRowCommaSeparated);
+                        if (verbose) Console.WriteLine("\n\n\t\tOur DataTable : " + strRowCommaSeparated);
 
                         var p = t.DataTable;
                         str += t.DataTable.ToString(); //.DataTable.ToString();
@@ -1016,12 +1110,12 @@ namespace fileHasherConverter
 
                     // Extracting series labels and count 
                     Microsoft.Office.Interop.PowerPoint.SeriesCollection tmp = (Microsoft.Office.Interop.PowerPoint.SeriesCollection)t.SeriesCollection();
-                    Console.WriteLine("Series Count:" + tmp.Count);
+                    if (verbose) Console.WriteLine("Series Count:" + tmp.Count);
                     t.ApplyDataLabels();
                     for (int j = 1; j <= tmp.Count; ++j)
                     {
                         Microsoft.Office.Interop.PowerPoint.Series aSeries = tmp.Item(j);
-                        Console.WriteLine("Series Name: " + aSeries.Name);
+                        if (verbose) Console.WriteLine("Series Name: " + aSeries.Name);
                         //Microsoft.Office.Interop.PowerPoint.Points pts = tmp.Item(j).Points(); // # point in the chart per series - meaning X axis for a pareto chart
                         //Console.WriteLine("Points #:" + pts.Count);
                         //Console.WriteLine(pts.Item(2).Name);
@@ -1049,9 +1143,9 @@ namespace fileHasherConverter
                 //Console.WriteLine("Chart Title:" + t.Title); // No need - shape.title takes care of this 
                 if (!t.ChartData.IsLinked)
                 {
-                    Console.WriteLine("Has Embedded Excel: True");
+                    if (verbose) Console.WriteLine("Has Embedded Excel: True");
                     Excel.Workbook eWorkbook = null;
-                    Excel.Worksheet eWorksheet = null; 
+                    Excel.Worksheet eWorksheet = null;
                     try
                     {
                         //Microsoft.Office.Interop.Excel.Application xApp = new Microsoft.Office.Interop.Excel.Application();
@@ -1080,7 +1174,7 @@ namespace fileHasherConverter
                         foreach (Excel.Range c in eWorksheet.UsedRange)
                         {
                             string changedCell = c.get_Address(Type.Missing, Type.Missing, Excel.XlReferenceStyle.xlA1, Type.Missing, Type.Missing);
-                            Console.Write(" | " + /*changedCell+ "="+*/  c.Value2);
+                            if (verbose) Console.Write(" | " + /*changedCell+ "="+*/  c.Value2);
                         }
                         eWorkbook.Close();
                     }

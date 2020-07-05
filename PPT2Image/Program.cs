@@ -73,7 +73,8 @@ namespace fileHasherConverter
             //md.getDocuments("fileStor");
 
             //var filter = "{ filename : 'Nanopoint_Training_Agenda.pptx'}"; 
-            var filter = "{ isProcessed : false, filetype : { $nin: ['.pdf', '.doc', '.docx'] } }"; 
+            //var filter = "{ isProcessed : false, filetype : { $nin: ['.pdf', '.doc', '.docx'] } }";
+            var filter = "{ isProcessed : false, filetype : '.pptx'}";
 
             getFilteredDocuments("fileStor", filter);
             
@@ -119,18 +120,16 @@ namespace fileHasherConverter
                 {
                     IEnumerable<BsonDocument> documents = cursor.Current;
 
-
                     batch++;
 
-                    Console.WriteLine($"Batch: {batch}");
+                    Console.WriteLine($"\nBatch: {batch}");
+                    
 
                     foreach (BsonDocument document in documents)
                     {
-                        Console.WriteLine("Processing document: "+ document["_id"]);
+                        //Console.WriteLine("Processing document: "+ document["_id"] + "  Path:"+ document["path"]);
                         //Console.WriteLine();
 
-                        // TODO task 
-                        pptController pt = new pptController();
 
                         // sample path example 
                         //string pa = System.Reflection.Assembly.GetExecutingAssembly().Location;
@@ -142,30 +141,72 @@ namespace fileHasherConverter
                         //pt.runPptParserFlow(document["rawPath"].ToString(), document.AsObjectId);
                         //pt.runPptParserFlow(document["rawPath"].ToString(), document["_id"].ToString());
 
-                        var motherID = pt.runPptParserFlow(document);
+                        //Console.WriteLine("Starting to run ppt parser flow..");
 
 
+                        // check filetype 
+                        string filetype = document["filetype"].ToString();
+                        Console.WriteLine("FileType " + filetype);
+                        var motherID = ObjectId.Empty;
+                        bool success = false;
+
+                        // TODO task if '*.PPT , *.PPTX                    
+                        if (filetype.EndsWith(".ppt") || filetype.EndsWith(".pptx"))
+                        {
+                            pptController pt = new pptController();
+
+                            var ret = pt.runPptParserFlow(document);
+                            motherID = ret.Item1;
+                            success = ret.Item2;
+                        }
+                        else
+                        {
+                            Console.ForegroundColor = ConsoleColor.Red;
+                            Console.WriteLine("[ERROR] File Type " + filetype + " not recognized");
+                            success = false;
+                            Console.ForegroundColor = ConsoleColor.White;
+
+                        }
+
+                        // TODO For PDF 
+
+                        // TODO for DOC, DOCX
+
+
+                        //Console.WriteLine("Mother ID extracted.");
                         /* Update FileStor {isProcessed : true } */
                         // create new Class entity for post 
-                        
-                        var fileCollection = db.GetCollection<BsonDocument>("fileStor");
+
+                        //var fileCollection = db.GetCollection<BsonDocument>("fileStor");
 
                         //find the MasterID with 1130 and replace it with 1120
-                        var result = await collection.FindOneAndUpdateAsync(
+                        if (success)
+                        {
+                            var result = await collection.FindOneAndUpdateAsync(
                                             Builders<BsonDocument>.Filter.Eq("_id", document["_id"]),
-                                            Builders<BsonDocument>.Update.Set("isProcessed", true)
+                                            Builders<BsonDocument>.Update.Set("isProcessed", false)
                                             .Set("MotherID", motherID));
+                        }
+                        else
+                        {
+                            var result = await collection.FindOneAndUpdateAsync(
+                                            Builders<BsonDocument>.Filter.Eq("_id", document["_id"]),
+                                            Builders<BsonDocument>.Update.Set("isProcessed", false)
+                                            .Set("MotherID", motherID)
+                                            .Set("logtext", "ERROR"));
+                        }
 
-                        //retrive the data from collection
-                        await fileCollection.Find(new BsonDocument())
-                         .ForEachAsync(x => Console.WriteLine(x));
+                            //retrive the data from collection
+                            //await fileCollection.Find(new BsonDocument())
+                            // .ForEachAsync(x => Console.WriteLine(x));
 
-                        countRecord++;
+                            countRecord++;
                     }
                 }
 
                 Console.WriteLine($"Total Batch: { batch}");
                 Console.WriteLine($"Total Records Processed: { countRecord}");
+                Console.ReadLine();
 
             }
 

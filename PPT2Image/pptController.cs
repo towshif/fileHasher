@@ -10,7 +10,7 @@ namespace fileHasherConverter
         /* Database */
         MongoDBConnect md;
         
-        public ObjectId runPptParserFlow(BsonDocument document)
+        public Tuple <ObjectId, bool> runPptParserFlow(BsonDocument document)
         {
             string pptfile = document["rawPath"].ToString();
             string fid = document["_id"].ToString(); 
@@ -18,7 +18,7 @@ namespace fileHasherConverter
 
 
 
-            Console.WriteLine(pptfile + " : id = " + fid);
+            //Console.WriteLine(pptfile + " : id = " + fid);
             ObjectId file_ID = new ObjectId(fid); 
 
             /* connect database */
@@ -44,40 +44,47 @@ namespace fileHasherConverter
             /*  CLOSE INITIALIZING CODE */
 
             pptParser my_Ppt_Parser = new pptParser(mother_ID, file_ID, pptfile, ppt_img_root, content_img_root, document);
-            my_Ppt_Parser.runPptParserFlow();
 
 
-            /* Update MOTHER DB with <collection> {slide ID, meta , author } */
-            // create new Class entity for post 
-            mongoData mg = new mongoData();
-            mg.Id = mother_ID;
-            mg.Data = new BsonDocument().AddRange(my_Ppt_Parser.get_PPT_METADATA());
-            mg.Collection = new BsonDocument().AddRange(my_Ppt_Parser.get_Slide_Collection());
+            bool success = my_Ppt_Parser.runPptParserFlow();
+
+            if (success)
+            {
+                /* Update MOTHER DB with <collection> {slide ID, meta , author } */
+                // create new Class entity for post 
+                mongoData mg = new mongoData();
+                mg.Id = mother_ID;
+                mg.Data = new BsonDocument().AddRange(my_Ppt_Parser.get_PPT_METADATA());
+                mg.Collection = new BsonDocument().AddRange(my_Ppt_Parser.get_Slide_Collection());
 
 
-            /*      Addition Fields for Mother      */
-            Dictionary<string, Object> fd = new Dictionary<string, Object>();
-            //List<Object> lt = new List<Object>();
+                /*      Addition Fields for Mother      */
+                Dictionary<string, Object> fd = new Dictionary<string, Object>();
+                //List<Object> lt = new List<Object>();
 
-            object lt = document["tags"];
+                object lt = document["tags"];
 
-            // link parent 
-            fd.Add("sourceID", file_ID);
-            fd.Add("source", "fileStor");
-            fd.Add("filename", fname);
-            fd.Add("filePath", pptfile);
-            fd.Add("fileType", "*.pptx");
-            // link child <collection>
-            fd.Add("collection_source", "dataSlides");
-            fd.Add("tags", lt);
-            mg.Data.AddRange(fd);
+                // link parent 
+                fd.Add("sourceID", file_ID);
+                fd.Add("source", "fileStor");
+                fd.Add("filename", fname);
+                fd.Add("filePath", pptfile);
+                fd.Add("fileType", "*.pptx");
+                // link child <collection>
+                fd.Add("collection_source", "dataSlides");
+                fd.Add("tags", lt);
+                mg.Data.AddRange(fd);
 
-            
-            md.updateEntireRecord("mother", mother_ID, mg);
 
-            return mother_ID; 
+                md.updateEntireRecord("mother", mother_ID, mg);
+
+                return Tuple.Create(mother_ID, true);
+            }
+
+            else
+                return Tuple.Create( ObjectId.Empty , false) ;
+
         }
-
 
     }
 }

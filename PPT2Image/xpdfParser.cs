@@ -15,7 +15,7 @@ using Microsoft.Office.Interop.Word;
 using Word = Microsoft.Office.Interop.Word;
 
 //using Microsoft.Office.Interop.Graph; 
-using ch = Microsoft.Office.Interop.Graph.Chart;
+//using ch = Microsoft.Office.Interop.Graph.Chart;
 using System.Text.RegularExpressions;
 using System.Data;
 // define custom keyValue pair for IDs

@@ -12,7 +12,7 @@ using PowerPoint = Microsoft.Office.Interop.PowerPoint;
 using Microsoft.Office.Interop.Excel;
 using Excel = Microsoft.Office.Interop.Excel;
 //using Microsoft.Office.Interop.Graph; 
-using ch = Microsoft.Office.Interop.Graph.Chart;
+//using ch = Microsoft.Office.Interop.Graph.Chart;
 using System.Text.RegularExpressions;
 using System.Data;
 // define custom keyValue pair for IDs
